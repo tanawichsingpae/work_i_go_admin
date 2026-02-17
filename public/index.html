@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <title>Job Admin Dashboard</title>
+
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+  <h1>Job Admin Dashboard</h1>
+  <p class="muted">Static analysis from Neon PostgreSQL (manual SQL)</p>
+
+  <div class="card">
+    <div class="filters">
+      <select id="geography">
+        <option value="">ทุกภาค</option>
+      </select>
+
+      <select id="province" disabled>
+        <option value="">ทุกจังหวัด</option>
+      </select>
+
+      <select id="district" disabled>
+        <option value="">ทุกอำเภอ</option>
+      </select>
+
+      <select id="job_type">
+        <option value="">ทุกประเภท</option>
+        <option value="1">Service</option>
+        <option value="2">Factory</option>
+        <option value="3">Transportation</option>
+        <option value="4">Office</option>
+        <option value="5">Sales</option>
+        <option value="6">IT</option>
+        <option value="7">Elder</option>
+      </select>
+
+      <select id="gender">
+        <option value="">ทุกเพศ</option>
+        <option value="male">ชาย</option>
+        <option value="female">หญิง</option>
+      </select>
+
+      <input id="min_wage" type="number" placeholder="ค่าแรงขั้นต่ำ">
+      <input id="max_wage" type="number" placeholder="ค่าแรงสูงสุด">
+
+      <button class="primary-btn" onclick="onFilterClick()">Filter</button>
+      <button type="button" class="reset-btn" onclick="resetFilters()">Reset</button>
+    </div>
+  </div>
+
+  <!-- ===== Tabs ===== -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="tab_global">Global Summary</button>
+    <button class="tab-btn" data-tab="tab_main">Main Table</button>
+    <button class="tab-btn" data-tab="tab_dash">Dashboard</button>
+    <button class="tab-btn" data-tab="tab_gov">Governance</button>
+  </div>
+
+    <!-- TAB 1: Global Summary -->
+  <div id="tab_global" class="tab-panel active">
+    <div class="card">
+      <h3 class="chart-title">สรุปข้อมูลรวมทั้งระบบ (Global Summary)</h3>
+      <table id="global_summary"></table>
+      <p class="muted">ข้อมูลนี้ไม่เปลี่ยนตาม Filter</p>
+    </div>
+  </div>
+
+  <!-- TAB 2 -->
+  <div id="tab_main" class="tab-panel">
+    <div class="card">
+      <table id="result"></table>
+      <div id="result_pager"></div>
+    </div>
+  </div>
+
+  <!-- TAB 3: Dashboard -->
+  <div id="tab_dash" class="tab-panel">
+    <div class="card">
+      <h3 class="chart-title">ภาพรวมระบบ (System Overview)</h3>
+      <div id="dash_overview"></div>
+    </div>
+
+    <div class="card">
+      <h3 class="chart-title">ตลาดแรงงาน (Labor Market Analysis)</h3>
+      <div class="chart-box hidden" id="market_chart_box">
+        <canvas id="chart_market"></canvas>
+      </div>
+      <table id="dash_market" class="hidden"></table>
+    </div>
+
+    <div class="card">
+      <h3 class="chart-title">อัตราการได้งานตามเพศ (Hire rate by Gender)</h3>
+      <div class="chart-box hidden" id="hire_gender_chart_box">
+        <canvas id="chart_hire_gender"></canvas>
+      </div>
+      <table id="dash_hire_gender" class="hidden"></table>
+    </div>
+
+    <div class="card">
+      <h3 class="chart-title">สัดส่วนผู้สมัครชาย-หญิงตามประเภทงาน</h3>
+      <div class="chart-box hidden" id="gender_ratio_chart_box">
+        <canvas id="chart_gender_ratio"></canvas>
+      </div>
+      <table id="dash_gender_ratio" class="hidden"></table>
+    </div>
+
+    <div class="card">
+      <h3 class="chart-title">การกระจายพื้นที่ (Geographic Distribution)</h3>
+      <div class="chart-box hidden" id="geo_chart_box">
+        <canvas id="chart_geo_posts"></canvas>
+      </div>
+      <table id="dash_geo" class="hidden"></table>
+      <div id="dash_geo_pager" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- TAB 4: Governance -->
+  <div id="tab_gov" class="tab-panel">
+    <div class="card">
+      <h3 class="chart-title">Governance Status</h3>
+      <div class="chart-box hidden" id="gov_status_chart_box">
+        <canvas id="chart_gov_status"></canvas>
+      </div>
+      <table id="dash_gov_status" class="hidden"></table>
+    </div>
+
+    <div class="card">
+      <h3 class="chart-title">Workload by LCO</h3>
+      <table id="dash_gov_lco"></table>
+      <div id="dash_gov_lco_pager"></div>
+    </div>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

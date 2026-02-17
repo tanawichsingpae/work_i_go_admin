@@ -1,0 +1,268 @@
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont;
+    background: #f4f6f8;
+    margin: 0;
+    padding: 20px;
+}
+
+h1 {
+    margin-bottom: 10px;
+}
+
+.card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.filters {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+select,
+input,
+button {
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    font-size: 14px;
+}
+
+button {
+    background: #2563eb;
+    color: white;
+    cursor: pointer;
+    border: none;
+}
+
+button:hover {
+    background: #1d4ed8;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+th,
+td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+}
+
+th {
+    background: #f1f5f9;
+}
+
+tr:hover {
+    background: #f9fafb;
+}
+
+.muted {
+    color: #6b7280;
+    font-size: 13px;
+}
+
+.chart-box {
+    height: 260px;
+    /* ปรับสูง-ต่ำได้ */
+    max-width: 520px;
+    /* จำกัดความกว้าง ไม่ให้เต็มจอ */
+    margin: 10px auto;
+    /* จัดให้อยู่กลาง */
+    padding-top: 60px;
+}
+
+.chart-box canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+#chart_gov_status {
+    max-width: 520px;
+    max-height: 260px;
+    margin: 10px auto;
+    display: block;
+}
+
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+th.sortable:hover {
+    background: #e2e8f0;
+}
+
+/* ===== Tabs UI ===== */
+.tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+
+.tab-btn {
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    background: #c6c5c5;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.tab-btn.active {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+}
+
+.tab-panel {
+    display: none;
+}
+
+.tab-panel.active {
+    display: block;
+}
+
+.reset-btn {
+    background: #e5e7eb;
+    color: #111827;
+    border: 1px solid #cbd5e1;
+    cursor: pointer;
+}
+
+.reset-btn:hover {
+    background: #d1d5db;
+}
+
+/* ซ่อน/โชว์กราฟแบบไม่เหลือช่องว่าง */
+.hidden {
+    display: none !important;
+}
+
+/* Status: ตาราง + กราฟ อยู่บรรทัดเดียวกัน */
+.two-col {
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    /* ปรับความกว้างกราฟได้ */
+    gap: 16px;
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .two-col {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ลด margin ของ chart-box เวลามีกราฟ */
+.chart-box {
+    height: 260px;
+    max-width: 520px;
+    margin: 8px auto;
+    /* เดิม 10px */
+}
+
+/* ===== Pagination UI ===== */
+.pager {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    justify-content: flex-end;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.pager button {
+    background: #e5e7eb;
+    color: #111827;
+    border: 1px solid #cbd5e1;
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.pager button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.pager button.active {
+    background: #2563eb;
+    color: #fff;
+    border-color: #2563eb;
+}
+
+.pager .info {
+    color: #6b7280;
+    font-size: 13px;
+    margin-right: auto;
+}
+
+.chart-box {
+    cursor: pointer;
+}
+
+.chart-box.hidden {
+    cursor: default;
+}
+
+/* ===== Table layout: คุมความกว้างให้สมส่วน ===== */
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    table-layout: fixed;
+    /* สำคัญ: บังคับให้คอลัมน์สมส่วน */
+}
+
+th,
+td {
+    padding: 10px 12px;
+    /* ให้โปรขึ้นนิด */
+    border-bottom: 1px solid #e5e7eb;
+    text-align: left;
+    vertical-align: middle;
+    overflow: hidden;
+    /* กันข้อความดันคอลัมน์ */
+    text-overflow: ellipsis;
+    /* ตัด ... ถ้ายาว */
+    white-space: nowrap;
+    /* ไม่ตัดบรรทัด */
+}
+
+/* คอลัมน์ตัวเลขให้ชิดขวาอ่านง่าย */
+td.num,
+th.num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    /* ตัวเลขเรียงสวย */
+}
+
+/* ===== ทำให้ตาราง Overview (2 คอลัมน์) สวยขึ้น ===== */
+#dash_overview table th:nth-child(1),
+#dash_overview table td:nth-child(1) {
+    width: 70%;
+}
+
+#dash_overview table th:nth-child(2),
+#dash_overview table td:nth-child(2) {
+    width: 30%;
+}
+
+/* หัวข้อกลางสำหรับการ์ดที่มี chart */
+.chart-title {
+    text-align: center;
+    margin: 0 0 16px;
+    /* เดิม 8px -> เพิ่มเป็น 16px (ปรับได้) */
+    padding-top: 4px;
+    /* เพิ่มนิดให้ดูโล่ง */
+}
