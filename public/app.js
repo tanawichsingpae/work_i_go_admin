@@ -231,6 +231,8 @@ async function resetFilters() {
   document.getElementById("min_wage").value = "";
   document.getElementById("max_wage").value = "";
   document.getElementById("gender").value = "";
+  document.getElementById("age_min").value = "";
+  document.getElementById("age_max").value = "";
 
   // reset จังหวัด + อำเภอ (กลับไปเหมือนเริ่มต้น)
   const prov = document.getElementById("province");
@@ -326,6 +328,8 @@ async function loadData() {
     district: document.getElementById('district').value,
     job_type: document.getElementById('job_type').value,
     gender: document.getElementById('gender').value,
+    age_min: document.getElementById('age_min').value,
+    age_max: document.getElementById('age_max').value,
     min_wage: document.getElementById('min_wage').value,
     max_wage: document.getElementById('max_wage').value,
     page: pagerState.main.page,
@@ -531,7 +535,7 @@ function renderOverviewCards(data) {
       <tr><td>จำนวน Employments (ได้งาน)</td><td>${escapeHtml(data.total_employments)}</td></tr>
       <tr><td>Conversion rate (สมัคร → ได้งาน)</td><td>${escapeHtml(data.conversion_rate)}</td></tr>
       <tr><td>จำนวน Jobseekers ทั้งหมด</td><td>${escapeHtml(data.total_jobseekers)}</td></tr>
-      <tr><td>Jobseekers ใหม่ในช่วงเวลา</td><td>${escapeHtml(data.new_jobseekers_in_range)}</td></tr>
+      <tr><td>Jobseekers ใหม่ในช่วงเวลา</td><td>${escapeHtml(data.new_jobseekers_in_range ?? 0)}</td></tr>
     </table>
   `;
 }
@@ -560,6 +564,8 @@ function buildDashboardParams() {
     district: document.getElementById('district').value,
     job_type: document.getElementById('job_type').value,
     gender: document.getElementById('gender').value,
+    age_min: document.getElementById('age_min').value,
+    age_max: document.getElementById('age_max').value,
     min_wage: document.getElementById('min_wage').value,
     max_wage: document.getElementById('max_wage').value
   });
@@ -1154,6 +1160,8 @@ async function loadGlobalSummary() {
 
 function onFilterClick() {
   resetPagesToFirst();
+  console.log("age_min", document.getElementById("age_min").value,
+              "age_max", document.getElementById("age_max").value);
   loadData();
   loadDashboardAll();
   loadGlobalSummary();

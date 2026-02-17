@@ -11,117 +11,33 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-/*app.get('/jobs', async (req, res) => {
-  const {
-    geography,
-    province,
-    district,
-    job_type,   // ตัวเลข id ที่ส่งมาจาก dropdown
-    min_wage,
-    max_wage
-  } = req.query;
-
-  let sql = `
-    SELECT
-      g.name AS geography,
-      p.name_th AS province,
-      d.name_th AS district,
-      jt.job_type AS job_type,
-      COUNT(*) AS total_jobs,
-      ROUND(AVG(jp.wage_amount), 2) AS avg_wage,
-      ROUND(AVG(jp.workers_needed), 2) AS avg_workers
-    FROM jobposts jp
-    JOIN sub_districts sd ON jp.sub_district_id = sd.id
-    JOIN districts d ON sd.district_id = d.id
-    JOIN provinces p ON d.province_id = p.id
-    JOIN geographies g ON p.geography_id = g.id
-    JOIN job_types jt ON jp.job_type_id = jt.job_type_id
-    WHERE 1=1
-  `;
-
-  const params = [];
-
-  if (geography) {
-    params.push(geography);
-    sql += ` AND p.geography_id = $${params.length}`;
-  }
-
-  if (province) {
-    params.push(province);
-    sql += ` AND p.id = $${params.length}`;
-  }
-
-  if (district) {
-    params.push(district);
-    sql += ` AND d.id = $${params.length}`;
-  }
-
-  // กรองด้วย id (ของ jobposts)
-  if (job_type) {
-    params.push(job_type);
-    sql += ` AND jp.job_type_id = $${params.length}`;
-  }
-
-  if (min_wage) {
-    params.push(min_wage);
-    sql += ` AND jp.wage_amount >= $${params.length}`;
-  }
-
-  if (max_wage) {
-    params.push(max_wage);
-    sql += ` AND jp.wage_amount <= $${params.length}`;
-  }
-
-  sql += `
-    GROUP BY g.name, p.name_th, d.name_th, jt.job_type
-    ORDER BY g.name, p.name_th, d.name_th, jt.job_type
-  `;
-
-  try {
-    const { rows } = await pool.query(sql, params);
-    res.json(rows);
-  } catch (err) {
-    console.error("❌ /jobs error:", err);
-    res.status(500).json({ error: err.message });
-  }
-}); */
-
 app.get('/jobs', async (req, res) => {
-  const { geography, province, district, job_type, min_wage, max_wage } = req.query;
-  const { page, pageSize, offset } = getPaging(req);
-
-  let where = `WHERE 1=1`;
-  const params = [];
-
-  if (geography) { params.push(geography); where += ` AND p.geography_id = $${params.length}`; }
-  if (province)  { params.push(province);  where += ` AND p.id = $${params.length}`; }
-  if (district)  { params.push(district);  where += ` AND d.id = $${params.length}`; }
-  if (job_type)  { params.push(job_type);  where += ` AND jp.job_type_id = $${params.length}`; }
-  if (min_wage)  { params.push(min_wage);  where += ` AND jp.wage_amount >= $${params.length}`; }
-  if (max_wage)  { params.push(max_wage);  where += ` AND jp.wage_amount <= $${params.length}`; }
-
-  const baseCte = `
-    WITH agg AS (
-      SELECT
-        g.name AS geography,
-        p.name_th AS province,
-        d.name_th AS district,
-        jt.job_type AS job_type,
-        COUNT(*)::int AS total_jobs,
-        ROUND(AVG(jp.wage_amount)::numeric, 2) AS avg_wage
-      FROM jobposts jp
-      JOIN sub_districts sd ON jp.sub_district_id = sd.id
-      JOIN districts d ON sd.district_id = d.id
-      JOIN provinces p ON d.province_id = p.id
-      JOIN geographies g ON p.geography_id = g.id
-      JOIN job_types jt ON jp.job_type_id = jt.job_type_id
-      ${where}
-      GROUP BY g.name, p.name_th, d.name_th, jt.job_type
-    )
-  `;
-
   try {
-    // total จำนวน "แถวหลัง group"
+    const { page, pageSize, offset } = getPaging(req);
+
+    // ✅ ใช้ filter กลาง (รวม cohort EXISTS แล้ว)
+    const { where, params } = buildJobpostFilters(req, { includeCohortExists: true });
+
+    const baseCte = `
+      WITH agg AS (
+        SELECT
+          g.name AS geography,
+          p.name_th AS province,
+          d.name_th AS district,
+          jt.job_type AS job_type,
+          COUNT(*)::int AS total_jobs,
+          ROUND(AVG(jp.wage_amount)::numeric, 2) AS avg_wage
+        FROM jobposts jp
+        JOIN sub_districts sd ON jp.sub_district_id = sd.id
+        JOIN districts d ON sd.district_id = d.id
+        JOIN provinces p ON d.province_id = p.id
+        JOIN geographies g ON p.geography_id = g.id
+        JOIN job_types jt ON jp.job_type_id = jt.job_type_id
+        ${where}
+        GROUP BY g.name, p.name_th, d.name_th, jt.job_type
+      )
+    `;
+
     const totalSql = `${baseCte} SELECT COUNT(*)::int AS total FROM agg;`;
     const totalResult = await pool.query(totalSql, params);
     const total = totalResult.rows?.[0]?.total || 0;
@@ -138,7 +54,6 @@ app.get('/jobs', async (req, res) => {
     const defaultOrder = "geography, province, district, job_type";
     const orderSql = getSort(req, allowedSort, defaultOrder);
 
-    // rows
     const rowsSql = `
       ${baseCte}
       SELECT *
@@ -147,8 +62,8 @@ app.get('/jobs', async (req, res) => {
       LIMIT ${addParam(params, pageSize)}
       OFFSET ${addParam(params, offset)}
     `;
-    const rowsResult = await pool.query(rowsSql, params);
 
+    const rowsResult = await pool.query(rowsSql, params);
     res.json({ page, page_size: pageSize, total, rows: rowsResult.rows });
   } catch (err) {
     console.error("❌ /jobs error:", err);
@@ -239,29 +154,49 @@ function getSort(req, allowedMap, defaultOrderSql) {
 
 app.get("/dashboard/market", async (req, res) => {
   try {
-    const { where, params } = buildJobpostFilters(req);
+    // ✅ เอาแค่ jobpost filters (ไม่เอา cohort EXISTS)
+    const { where, params } = buildJobpostFilters(req, { includeCohortExists: false });
+
+    // ✅ cohort ที่ระดับผู้สมัคร
+    const cohort = applicantCohortInlineClause(req, params, "js");
+    const cohortGate = hasCohort(req) ? `AND ja.job_application_id IS NOT NULL ${cohort}` : "";
 
     const sql = `
       SELECT
         jt.job_type_id,
         jt.job_type,
+
+        -- posts: ถ้ามี cohort -> นับเฉพาะโพสต์ที่มีใบสมัคร cohort
         COUNT(DISTINCT jp.jobpost_id)::int AS posts,
+
+        -- applications/hired: ถูกกรอง cohort จริง ๆ
         COUNT(ja.job_application_id)::int AS applications,
-        COUNT(DISTINCT e.employment_id)::int AS hired,
+        COUNT(DISTINCT ja.job_application_id) FILTER (WHERE e.employment_id IS NOT NULL)::int AS hired,
+
         CASE WHEN COUNT(DISTINCT jp.jobpost_id) = 0 THEN 0
              ELSE ROUND(COUNT(ja.job_application_id)::numeric / COUNT(DISTINCT jp.jobpost_id)::numeric, 2)
         END AS apps_per_post,
+
         CASE WHEN COUNT(ja.job_application_id) = 0 THEN 0
-             ELSE ROUND(COUNT(DISTINCT e.employment_id)::numeric / COUNT(ja.job_application_id)::numeric, 2)
+             ELSE ROUND(
+               (COUNT(DISTINCT ja.job_application_id) FILTER (WHERE e.employment_id IS NOT NULL))::numeric
+               / COUNT(ja.job_application_id)::numeric
+             , 2)
         END AS hire_rate
+
       FROM jobposts jp
       JOIN job_types jt ON jp.job_type_id = jt.job_type_id
       JOIN sub_districts sd ON jp.sub_district_id = sd.id
       JOIN districts d ON sd.district_id = d.id
       JOIN provinces p ON d.province_id = p.id
+
       LEFT JOIN job_applications ja ON ja.jobpost_id = jp.jobpost_id
+      LEFT JOIN job_seekers js ON js.job_seeker_id = ja.job_seeker_id
       LEFT JOIN employments e ON e.job_application_id = ja.job_application_id
+
       ${where}
+      ${cohortGate}
+
       GROUP BY jt.job_type_id, jt.job_type
       ORDER BY posts DESC, jt.job_type
     `;
@@ -313,7 +248,12 @@ app.get("/dashboard/wage-distribution", async (req, res) => {
 
 app.get("/dashboard/geo/provinces", async (req, res) => {
   try {
-    const { where, params } = buildJobpostFilters(req);
+    const { where, params } = buildJobpostFilters(req, { includeCohortExists: false });
+
+    const cohort = applicantCohortInlineClause(req, params, "js");
+    const cohortGate = hasCohort(req)
+      ? `AND ja.job_application_id IS NOT NULL ${cohort}`
+      : "";
 
     const sql = `
       SELECT
@@ -324,14 +264,20 @@ app.get("/dashboard/geo/provinces", async (req, res) => {
         CASE WHEN COUNT(DISTINCT jp.jobpost_id)=0 THEN 0
              ELSE ROUND(COUNT(ja.job_application_id)::numeric / COUNT(DISTINCT jp.jobpost_id)::numeric, 2)
         END AS apps_per_post,
-        ROUND(AVG(jp.wage_amount), 2) AS avg_wage
+        ROUND(AVG(jp.wage_amount)::numeric, 2) AS avg_wage
+
       FROM jobposts jp
       JOIN sub_districts sd ON jp.sub_district_id = sd.id
       JOIN districts d ON sd.district_id = d.id
       JOIN provinces p ON d.province_id = p.id
       JOIN geographies g ON p.geography_id = g.id
+
       LEFT JOIN job_applications ja ON ja.jobpost_id = jp.jobpost_id
+      LEFT JOIN job_seekers js ON js.job_seeker_id = ja.job_seeker_id
+
       ${where}
+      ${cohortGate}
+
       GROUP BY g.name, p.name_th
       ORDER BY posts DESC, p.name_th
     `;
@@ -366,15 +312,84 @@ async function hasColumn(pool, tableName, columnName) {
   return rows.length > 0;
 }
 
+function applicantCohortExistsClause(req, params) {
+  const { gender, age_min, age_max } = req.query;
+
+  if (!gender && !age_min && !age_max) return ""; // ไม่มี cohort filter
+
+  // NOTE: ใช้ addParam(params, ...) เพื่อให้ placeholder ไม่ชนกัน
+  const genderCond = gender ? `
+    AND (
+      CASE
+        WHEN lower(trim(COALESCE(js2.gender,''))) IN ('male','m','ชาย','man') THEN 'male'
+        WHEN lower(trim(COALESCE(js2.gender,''))) IN ('female','f','หญิง','woman') THEN 'female'
+        WHEN COALESCE(trim(js2.gender), '') = '' THEN 'unknown'
+        ELSE 'other'
+      END
+    ) = ${addParam(params, gender)}
+  ` : "";
+
+  const ageCond = (age_min || age_max) ? `
+    AND js2.birth_date IS NOT NULL
+    ${age_min ? `AND DATE_PART('year', AGE(CURRENT_DATE, js2.birth_date)) >= ${addParam(params, age_min)}` : ""}
+    ${age_max ? `AND DATE_PART('year', AGE(CURRENT_DATE, js2.birth_date)) <= ${addParam(params, age_max)}` : ""}
+  ` : "";
+
+  return `
+    AND EXISTS (
+      SELECT 1
+      FROM job_applications ja2
+      JOIN job_seekers js2 ON js2.job_seeker_id = ja2.job_seeker_id
+      WHERE ja2.jobpost_id = jp.jobpost_id
+      ${genderCond}
+      ${ageCond}
+    )
+  `;
+}
+
+function applicantCohortInlineClause(req, params, jsAlias = "js") {
+  const { gender, age_min, age_max } = req.query;
+  let sql = "";
+
+  if (gender) {
+    sql += `
+      AND (
+        CASE
+          WHEN lower(trim(COALESCE(${jsAlias}.gender,''))) IN ('male','m','ชาย','man') THEN 'male'
+          WHEN lower(trim(COALESCE(${jsAlias}.gender,''))) IN ('female','f','หญิง','woman') THEN 'female'
+          WHEN COALESCE(trim(${jsAlias}.gender), '') = '' THEN 'unknown'
+          ELSE 'other'
+        END
+      ) = ${addParam(params, gender)}
+    `;
+  }
+
+  if (age_min || age_max) {
+    sql += `
+      AND ${jsAlias}.birth_date IS NOT NULL
+      ${age_min ? `AND DATE_PART('year', AGE(CURRENT_DATE, ${jsAlias}.birth_date)) >= ${addParam(params, age_min)}` : ""}
+      ${age_max ? `AND DATE_PART('year', AGE(CURRENT_DATE, ${jsAlias}.birth_date)) <= ${addParam(params, age_max)}` : ""}
+    `;
+  }
+
+  return sql;
+}
+
+function hasCohort(req) {
+  const { gender, age_min, age_max } = req.query;
+  return !!(gender || age_min || age_max);
+}
+
 /**
  * Filter สำหรับ jobposts-based endpoints
- * ใช้กับ jp.created_at เป็นช่วงเวลา
+ * opts.includeCohortExists = true  -> โหมด "post มีผู้สมัคร cohort อย่างน้อย 1 คน"
+ * opts.includeCohortExists = false -> โหมดกรองเฉพาะ jobpost (ไม่ยุ่ง cohort)
  */
-function buildJobpostFilters(req) {
+function buildJobpostFilters(req, opts = { includeCohortExists: false }) {
   const {
     geography, province, district, job_type,
     min_wage, max_wage,
-    start_date, end_date, // YYYY-MM-DD หรือ timestamp ก็ได้
+    start_date, end_date,
     approval_status
   } = req.query;
 
@@ -395,6 +410,11 @@ function buildJobpostFilters(req) {
 
   if (approval_status) where += ` AND jp.approval_status = ${addParam(params, approval_status)}`;
 
+  // ✅ ใส่ cohort EXISTS เฉพาะ endpoint ที่ต้องการ "post-level cohort" จริง ๆ
+  if (opts.includeCohortExists) {
+    where += applicantCohortExistsClause(req, params);
+  }
+
   return { where, params };
 }
 
@@ -407,6 +427,7 @@ function buildApplicationFilters(req, opts = {}) {
   const {
     geography, province, district, job_type,
     gender,
+    age_min, age_max,
     min_wage, max_wage,
     start_date, end_date
   } = req.query;
@@ -443,39 +464,55 @@ function buildApplicationFilters(req, opts = {}) {
     )`;
   }
 
+  // ✅ อายุ: ใช้ birth_date ของ job_seekers
+  if (age_min || age_max) {
+    // ถ้าใส่อายุ จะตัดคนที่ไม่รู้วันเกิดออก (birth_date null)
+    where += ` AND EXISTS (
+      SELECT 1
+      FROM job_seekers js_age
+      WHERE js_age.job_seeker_id = ja.job_seeker_id
+        AND js_age.birth_date IS NOT NULL
+        ${age_min ? `AND DATE_PART('year', AGE(CURRENT_DATE, js_age.birth_date)) >= ${addParam(params, age_min)}` : ""}
+        ${age_max ? `AND DATE_PART('year', AGE(CURRENT_DATE, js_age.birth_date)) <= ${addParam(params, age_max)}` : ""}
+    )`;
+  }
+
   return { where, params };
 }
 
 app.get("/dashboard/overview", async (req, res) => {
   try {
-    const { where, params } = buildJobpostFilters(req);
+    // ✅ jobpost filter ไม่เอา cohort EXISTS
+    const { where, params } = buildJobpostFilters(req, { includeCohortExists: false });
 
-    // ตรวจ employments ก่อน (กันพัง)
+    // ✅ cohort filter (gender/age) ใช้กับ alias "js"
+    const cohort = applicantCohortInlineClause(req, params, "js");
+
     const employmentExists = await hasTable(pool, "employments");
-    let hireCte = `SELECT 0::int AS total_employments`; // default ถ้าไม่มี table
+    const hasJobApplicationId = employmentExists && await hasColumn(pool, "employments", "job_application_id");
 
-    if (employmentExists) {
-      const hasJobpostId = await hasColumn(pool, "employments", "jobpost_id");
-      const hasJobApplicationId = await hasColumn(pool, "employments", "job_application_id");
+    let hireCte = `SELECT 0::int AS total_employments`;
 
-      if (hasJobpostId) {
-        hireCte = `
-          SELECT COUNT(*)::int AS total_employments
-          FROM employments e
-          JOIN base b ON e.jobpost_id = b.jobpost_id
-        `;
-      } else if (hasJobApplicationId) {
-        hireCte = `
-          SELECT COUNT(*)::int AS total_employments
-          FROM employments e
-          JOIN job_applications ja ON e.job_application_id = ja.job_application_id
-          JOIN base b ON ja.jobpost_id = b.jobpost_id
-        `;
-      } else {
-        // มี table แต่ไม่รู้จะ join ยังไง -> คืน 0
-        hireCte = `SELECT 0::int AS total_employments`;
-      }
+    if (hasJobApplicationId) {
+      hireCte = `
+        SELECT
+          COUNT(DISTINCT ja.job_application_id)::int AS total_employments
+        FROM employments e
+        JOIN job_applications ja ON e.job_application_id = ja.job_application_id
+        JOIN job_seekers js ON js.job_seeker_id = ja.job_seeker_id
+        JOIN base b ON ja.jobpost_id = b.jobpost_id
+        WHERE 1=1
+        ${cohort}
+      `;
     }
+
+    // ✅ start/end ส่งมาจาก UI ได้/ไม่ได้ก็ได้
+    const start_date = req.query.start_date || null;
+    const end_date   = req.query.end_date   || null;
+
+    // ✅ index ของ start/end ต้องคำนวณหลัง params ถูก push โดย cohort แล้ว
+    const idxStart = params.length + 1;
+    const idxEnd   = params.length + 2;
 
     const sql = `
       WITH base AS (
@@ -494,7 +531,10 @@ app.get("/dashboard/overview", async (req, res) => {
           COUNT(*)::int AS total_applications,
           COUNT(DISTINCT ja.job_seeker_id)::int AS unique_applicants
         FROM job_applications ja
+        JOIN job_seekers js ON js.job_seeker_id = ja.job_seeker_id
         JOIN base b ON ja.jobpost_id = b.jobpost_id
+        WHERE 1=1
+        ${cohort}
       ),
       hires AS (
         ${hireCte}
@@ -502,17 +542,26 @@ app.get("/dashboard/overview", async (req, res) => {
       seekers AS (
         SELECT
           COUNT(*)::int AS total_jobseekers,
-          COUNT(*) FILTER (
-            WHERE (
-              $${params.length + 1}::timestamptz IS NULL
-              OR js.created_at >= $${params.length + 1}::timestamptz
-            )
-            AND (
-              $${params.length + 2}::timestamptz IS NULL
-              OR js.created_at <  $${params.length + 2}::timestamptz
-            )
-          )::int AS new_jobseekers_in_range
+
+          CASE
+            WHEN $${idxStart}::timestamptz IS NULL AND $${idxEnd}::timestamptz IS NULL
+            THEN COUNT(*)::int
+            ELSE
+              COUNT(*) FILTER (
+                WHERE (
+                  $${idxStart}::timestamptz IS NULL
+                  OR js.created_at >= $${idxStart}::timestamptz
+                )
+                AND (
+                  $${idxEnd}::timestamptz IS NULL
+                  OR js.created_at <  $${idxEnd}::timestamptz
+                )
+              )::int
+          END AS new_jobseekers_in_range
+
         FROM job_seekers js
+        WHERE 1=1
+        ${cohort}
       )
 
       SELECT
@@ -531,12 +580,9 @@ app.get("/dashboard/overview", async (req, res) => {
         (SELECT new_jobseekers_in_range FROM seekers) AS new_jobseekers_in_range
     `;
 
-    // ใช้ start_date/end_date เดิมให้ seekers ด้วย (ถ้าไม่ได้ส่งมา = null)
-    const start_date = req.query.start_date || null;
-    const end_date = req.query.end_date || null;
-
     const { rows } = await pool.query(sql, [...params, start_date, end_date]);
     res.json(rows[0]);
+
   } catch (err) {
     console.error("❌ /dashboard/overview error:", err);
     res.status(500).json({ error: err.message });
@@ -545,8 +591,15 @@ app.get("/dashboard/overview", async (req, res) => {
 
 app.get("/dashboard/geo/area", async (req, res) => {
   try {
-    const { where, params } = buildJobpostFilters(req);
+    // ✅ jobpost filters ไม่เอา cohort EXISTS (เพราะเราจะกรอง cohort ที่ ja/js)
+    const { where, params } = buildJobpostFilters(req, { includeCohortExists: false });
     const { page, pageSize, offset } = getPaging(req);
+
+    // ✅ cohort filter ที่ระดับผู้สมัคร
+    const cohort = applicantCohortInlineClause(req, params, "js");
+    const cohortGate = hasCohort(req)
+      ? `AND ja.job_application_id IS NOT NULL ${cohort}`
+      : "";
 
     const baseCte = `
       WITH agg AS (
@@ -554,20 +607,32 @@ app.get("/dashboard/geo/area", async (req, res) => {
           g.name AS geography,
           p.name_th AS province,
           d.name_th AS district,
+
+          -- posts: ถ้ามี cohort -> นับเฉพาะโพสต์ที่มีใบสมัคร cohort
           COUNT(DISTINCT jp.jobpost_id)::int AS posts,
+
+          -- applications: ถูกกรอง cohort จริง (อยู่ใน WHERE cohortGate แล้ว)
           COUNT(ja.job_application_id)::int AS applications,
+
           CASE WHEN COUNT(DISTINCT jp.jobpost_id)=0 THEN 0
                ELSE ROUND(COUNT(ja.job_application_id)::numeric / COUNT(DISTINCT jp.jobpost_id)::numeric, 2)
           END AS apps_per_post,
+
           ROUND(AVG(jp.wage_amount)::numeric, 2) AS avg_wage,
           ROUND(AVG(jp.workers_needed)::numeric, 2) AS avg_workers_needed
+
         FROM jobposts jp
         JOIN sub_districts sd ON jp.sub_district_id = sd.id
         JOIN districts d ON sd.district_id = d.id
         JOIN provinces p ON d.province_id = p.id
         JOIN geographies g ON p.geography_id = g.id
+
         LEFT JOIN job_applications ja ON ja.jobpost_id = jp.jobpost_id
+        LEFT JOIN job_seekers js ON js.job_seeker_id = ja.job_seeker_id
+
         ${where}
+        ${cohortGate}
+
         GROUP BY g.name, p.name_th, d.name_th
       )
     `;
@@ -598,8 +663,8 @@ app.get("/dashboard/geo/area", async (req, res) => {
       LIMIT ${addParam(params, pageSize)}
       OFFSET ${addParam(params, offset)}
     `;
-    const rowsResult = await pool.query(rowsSql, params);
 
+    const rowsResult = await pool.query(rowsSql, params);
     res.json({ page, page_size: pageSize, total, rows: rowsResult.rows });
   } catch (err) {
     console.error("❌ /dashboard/geo/area error:", err);
@@ -609,22 +674,22 @@ app.get("/dashboard/geo/area", async (req, res) => {
 
 app.get("/dashboard/geo/top", async (req, res) => {
   try {
-    const { where, params } = buildJobpostFilters(req);
+    const { where, params } = buildJobpostFilters(req, { includeCohortExists: false });
 
-    // ถ้าเลือกจังหวัดแล้ว แต่ยังไม่ได้เลือกอำเภอ -> ให้ทำ Top 10 อำเภอในจังหวัดนั้น
-    // ถ้ายังไม่ได้เลือกจังหวัด -> ให้ทำ Top 10 จังหวัด (ในภาคที่เลือก/หรือทั้งประเทศ)
+    const cohort = applicantCohortInlineClause(req, params, "js");
+    const cohortGate = hasCohort(req)
+      ? `AND ja.job_application_id IS NOT NULL ${cohort}`
+      : "";
+
     const provinceSelected = !!req.query.province;
     const districtSelected = !!req.query.district;
 
-    // ถ้าเลือก district แล้ว จริงๆ ไม่ต้องมีกราฟ (มันเหลือจุดเดียว)
     if (districtSelected) {
       return res.json({ mode: "none", rows: [] });
     }
 
-    let sql = "";
     if (provinceSelected) {
-      // Top 10 districts within selected province (respect other filters)
-      sql = `
+      const sql = `
         SELECT
           d.name_th AS label,
           COUNT(DISTINCT jp.jobpost_id)::int AS value
@@ -632,7 +697,13 @@ app.get("/dashboard/geo/top", async (req, res) => {
         JOIN sub_districts sd ON jp.sub_district_id = sd.id
         JOIN districts d ON sd.district_id = d.id
         JOIN provinces p ON d.province_id = p.id
+
+        LEFT JOIN job_applications ja ON ja.jobpost_id = jp.jobpost_id
+        LEFT JOIN job_seekers js ON js.job_seeker_id = ja.job_seeker_id
+
         ${where}
+        ${cohortGate}
+
         GROUP BY d.name_th
         ORDER BY value DESC, label
         LIMIT 10
@@ -640,8 +711,7 @@ app.get("/dashboard/geo/top", async (req, res) => {
       const { rows } = await pool.query(sql, params);
       return res.json({ mode: "district", rows });
     } else {
-      // Top 10 provinces (respect other filters)
-      sql = `
+      const sql = `
         SELECT
           p.name_th AS label,
           COUNT(DISTINCT jp.jobpost_id)::int AS value
@@ -650,7 +720,13 @@ app.get("/dashboard/geo/top", async (req, res) => {
         JOIN districts d ON sd.district_id = d.id
         JOIN provinces p ON d.province_id = p.id
         JOIN geographies g ON p.geography_id = g.id
+
+        LEFT JOIN job_applications ja ON ja.jobpost_id = jp.jobpost_id
+        LEFT JOIN job_seekers js ON js.job_seeker_id = ja.job_seeker_id
+
         ${where}
+        ${cohortGate}
+
         GROUP BY p.name_th
         ORDER BY value DESC, label
         LIMIT 10
@@ -666,7 +742,8 @@ app.get("/dashboard/geo/top", async (req, res) => {
 
 app.get("/dashboard/gov/status", async (req, res) => {
   try {
-    const { where, params } = buildJobpostFilters(req);
+    // ✅ ใช้ post-level cohort (EXISTS)
+    const { where, params } = buildJobpostFilters(req, { includeCohortExists: true });
 
     const sql = `
       WITH x AS (
@@ -703,7 +780,8 @@ app.get("/dashboard/gov/status", async (req, res) => {
 
 app.get("/dashboard/gov/lco", async (req, res) => {
   try {
-    const { where, params } = buildJobpostFilters(req);
+    // ✅ ใช้ post-level cohort (EXISTS)
+    const { where, params } = buildJobpostFilters(req, { includeCohortExists: true });
     const { page, pageSize, offset } = getPaging(req);
 
     const hasName = await hasColumn(pool, "legal_compliance_officers", "name");
@@ -718,8 +796,6 @@ app.get("/dashboard/gov/lco", async (req, res) => {
       rejected_count: "rejected_count",
       avg_review_hours: "avg_review_hours",
       total_appeals: "total_appeals",
-      // ถ้ามีคอลัมน์ lco_name แล้วอยาก sort ได้ด้วย ค่อยเปิด:
-      // lco_name: "lco_name",
     };
 
     const defaultOrder = "pending_count DESC, total_assigned DESC, lco_id";
@@ -739,7 +815,6 @@ app.get("/dashboard/gov/lco", async (req, res) => {
               FILTER (WHERE jp.approval_date IS NOT NULL)
             )::numeric
           , 2) AS avg_review_hours,
-
           COALESCE(SUM(jp.appeal_count), 0)::int AS total_appeals
         FROM jobposts jp
         JOIN sub_districts sd ON jp.sub_district_id = sd.id
@@ -763,8 +838,8 @@ app.get("/dashboard/gov/lco", async (req, res) => {
       LIMIT ${addParam(params, pageSize)}
       OFFSET ${addParam(params, offset)}
     `;
-    const rowsResult = await pool.query(rowsSql, params);
 
+    const rowsResult = await pool.query(rowsSql, params);
     res.json({ page, page_size: pageSize, total, rows: rowsResult.rows });
   } catch (err) {
     console.error("❌ /dashboard/gov/lco error:", err);
