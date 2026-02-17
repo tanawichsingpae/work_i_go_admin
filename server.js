@@ -996,6 +996,8 @@ app.get("/stats/global-summary", async (req, res) => {
 
 app.use(express.static("public"));
 
-app.listen(3000, () => {
-  console.log('✅ API connected to Neon at http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`✅ API connected to Neon on port ${PORT}`);
 });
