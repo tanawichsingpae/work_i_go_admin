@@ -51,7 +51,7 @@ let chartGeoPosts = null;
 let chartHireGender = null;
 let chartGenderRatio = null;
 
-const API_BASE = "http://localhost:3000";
+const API_BASE = "https://work-i-go-admin.onrender.com";
 
 function resizeVisibleCharts() {
   // ถ้า tab_gov แสดงอยู่ ค่อย resize
