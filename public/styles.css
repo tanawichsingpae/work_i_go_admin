@@ -1,268 +1,460 @@
-body {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont;
-    background: #f4f6f8;
-    margin: 0;
-    padding: 20px;
+:root{
+  --bg: #ebf0f5;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
+  --primary: #2563eb;
+  --primary-600:#1d4ed8;
+  --shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  --radius: 14px;
 }
 
-h1 {
-    margin-bottom: 10px;
+*{ box-sizing: border-box; }
+
+body{
+  font-family: system-ui, -apple-system, BlinkMacSystemFont;
+  background: radial-gradient(1200px 600px at 20% 0%, #f5f7ff 0%, var(--bg) 45%, var(--bg) 100%);
+  margin: 0;
+  color: var(--text);
 }
 
-.card {
-    background: #fff;
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+.container{
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 18px 18px 40px;
 }
 
-.filters {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px;
-    margin-bottom: 12px;
+.title{
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.2px;
 }
 
-select,
-input,
-button {
-    padding: 8px;
-    border-radius: 6px;
-    border: 1px solid #ccc;
-    font-size: 14px;
+.subtitle{
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 
-button {
-    background: #2563eb;
-    color: white;
-    cursor: pointer;
-    border: none;
+.muted{
+  color: var(--muted);
+  font-size: 13px;
 }
 
-button:hover {
-    background: #1d4ed8;
+/* Topbar */
+.topbar{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
+.topbar-actions{
+  display:flex;
+  align-items:center;
+  gap: 8px;
 }
 
-th,
-td {
-    padding: 8px 10px;
-    border-bottom: 1px solid #e5e7eb;
-    text-align: left;
+.pill{
+  display:inline-flex;
+  align-items:center;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.75);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
 }
 
-th {
-    background: #f1f5f9;
+/* Card */
+.card{
+  background: var(--card);
+  border: 1px solid rgba(226,232,240,0.9);
+  border-radius: var(--radius);
+  padding: 14px 14px;
+  margin-bottom: 14px;
+  box-shadow: var(--shadow);
 }
 
-tr:hover {
-    background: #f9fafb;
+.card-head{
+  display:flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
-.muted {
-    color: #6b7280;
-    font-size: 13px;
+.card-title{
+  margin: 0;
+  font-size: 15px;
+  letter-spacing: -0.2px;
 }
 
-.chart-box {
-    height: 260px;
-    /* ปรับสูง-ต่ำได้ */
-    max-width: 520px;
-    /* จำกัดความกว้าง ไม่ให้เต็มจอ */
-    margin: 10px auto;
-    /* จัดให้อยู่กลาง */
-    padding-top: 60px;
+/* Sticky Filters */
+.filters-card{
+  position: sticky;
+  top: 12px;
+  z-index: 10;
+  backdrop-filter: blur(6px);
 }
 
-.chart-box canvas {
-    width: 100% !important;
-    height: 100% !important;
+.filters-head{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 12px;
+  margin-bottom: 10px;
 }
 
-#chart_gov_status {
-    max-width: 520px;
-    max-height: 260px;
-    margin: 10px auto;
-    display: block;
+.filters-title{
+  font-weight: 700;
+  font-size: 14px;
 }
 
-th.sortable {
-    cursor: pointer;
-    user-select: none;
+.filters-actions{
+  display:flex;
+  gap: 10px;
 }
 
-th.sortable:hover {
-    background: #e2e8f0;
+/* Inputs */
+select, input{
+  padding: 10px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  font-size: 14px;
+  background: #fff;
+  outline: none;
+  transition: box-shadow .15s, border-color .15s;
 }
 
-/* ===== Tabs UI ===== */
-.tabs {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
+select:focus, input:focus{
+  border-color: rgba(37,99,235,0.55);
+  box-shadow: 0 0 0 4px rgba(37,99,235,0.12);
 }
 
-.tab-btn {
-    padding: 8px 12px;
-    border: 1px solid #cbd5e1;
-    background: #c6c5c5;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 14px;
+/* Filter grid */
+.filters{
+  display:grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 10px;
 }
 
-.tab-btn.active {
-    background: #2563eb;
-    color: #fff;
-    border-color: #2563eb;
+@media (max-width: 1100px){
+  .filters{ grid-template-columns: repeat(4, minmax(140px, 1fr)); }
+}
+@media (max-width: 860px){
+  .filters{ grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+  .filters-head{ flex-direction: column; align-items: stretch; }
+  .filters-actions{ justify-content: flex-start; }
 }
 
-.tab-panel {
-    display: none;
+/* Buttons */
+button{
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  cursor: pointer;
 }
 
-.tab-panel.active {
-    display: block;
+.primary-btn{
+  background: var(--primary);
+  color: #fff;
+  border-color: rgba(37,99,235,0.25);
+  box-shadow: 0 6px 18px rgba(37,99,235,0.22);
+}
+.primary-btn:hover{ background: var(--primary-600); }
+
+.reset-btn{
+  background: #f1f5f9;
+  color: #0f172a;
+  border: 1px solid var(--border);
+}
+.reset-btn:hover{ background: #e2e8f0; }
+
+/* Tabs */
+.tabs{
+  display:flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 12px;
 }
 
-.reset-btn {
-    background: #e5e7eb;
-    color: #111827;
-    border: 1px solid #cbd5e1;
-    cursor: pointer;
+.tab-btn{
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.65);
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  transition: background .15s, border-color .15s, color .15s;
 }
 
-.reset-btn:hover {
-    background: #d1d5db;
+.tab-btn.active{
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
 }
 
-/* ซ่อน/โชว์กราฟแบบไม่เหลือช่องว่าง */
-.hidden {
-    display: none !important;
+/* Panels */
+.tab-panel{ display:none; }
+.tab-panel.active{ display:block; }
+
+/* Dashboard grid */
+.dash-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
 }
 
-/* Status: ตาราง + กราฟ อยู่บรรทัดเดียวกัน */
-.two-col {
-    display: grid;
-    grid-template-columns: 1fr 420px;
-    /* ปรับความกว้างกราฟได้ */
-    gap: 16px;
-    align-items: start;
+.dash-span-2{ grid-column: 1 / -1; }
+
+@media (max-width: 900px){
+  .dash-grid{ grid-template-columns: 1fr; }
+  .dash-span-2{ grid-column: auto; }
 }
 
-@media (max-width: 900px) {
-    .two-col {
-        grid-template-columns: 1fr;
-    }
+/* Chart box */
+.chart-box{
+  height: 320px;              /* ✅ สูงขึ้นนิด ให้กราฟไม่แบน */
+  width: 100%;
+  max-width: 100%;            /* ✅ เอา max-width 720 ออก */
+  margin: 8px auto 6px;
+  padding: 10px;              /* ✅ ลด padding นิด */
+  border: 1px dashed rgba(100,116,139,0.35);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(248,250,252,0.9) 0%, rgba(255,255,255,1) 100%);
+  cursor: pointer;
 }
 
-/* ลด margin ของ chart-box เวลามีกราฟ */
-.chart-box {
-    height: 260px;
-    max-width: 520px;
-    margin: 8px auto;
-    /* เดิม 10px */
+.chart-box canvas{
+  width: 100% !important;
+  height: 100% !important;
 }
 
-/* ===== Pagination UI ===== */
-.pager {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    justify-content: flex-end;
-    margin-top: 10px;
-    flex-wrap: wrap;
+
+.chart-box.hidden{ cursor: default; }
+
+/* Hidden */
+.hidden{ display:none !important; }
+
+/* Table */
+table{
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  table-layout: fixed;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 12px;
 }
 
-.pager button {
-    background: #e5e7eb;
-    color: #111827;
-    border: 1px solid #cbd5e1;
-    padding: 6px 10px;
-    border-radius: 8px;
-    cursor: pointer;
+th, td{
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.pager button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+thead th{
+  background: #f8fafc;
+  color: #0f172a;
+  font-weight: 700;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
-.pager button.active {
-    background: #2563eb;
-    color: #fff;
-    border-color: #2563eb;
+tbody tr:nth-child(even){
+  background: #fbfdff;
 }
 
-.pager .info {
-    color: #6b7280;
-    font-size: 13px;
-    margin-right: auto;
+tbody tr:hover{
+  background: #f1f5ff;
 }
 
-.chart-box {
-    cursor: pointer;
+th.sortable{
+  cursor:pointer;
+  user-select:none;
+}
+th.sortable:hover{
+  background: #eef2ff;
 }
 
-.chart-box.hidden {
-    cursor: default;
+/* Numeric align (ถ้าอยากใช้ในอนาคต) */
+td.num, th.num{
+  text-align:right;
+  font-variant-numeric: tabular-nums;
 }
 
-/* ===== Table layout: คุมความกว้างให้สมส่วน ===== */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 14px;
-    table-layout: fixed;
-    /* สำคัญ: บังคับให้คอลัมน์สมส่วน */
+/* Pager */
+.pager{
+  display:flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 10px;
+  flex-wrap: wrap;
 }
 
-th,
-td {
-    padding: 10px 12px;
-    /* ให้โปรขึ้นนิด */
-    border-bottom: 1px solid #e5e7eb;
-    text-align: left;
-    vertical-align: middle;
-    overflow: hidden;
-    /* กันข้อความดันคอลัมน์ */
-    text-overflow: ellipsis;
-    /* ตัด ... ถ้ายาว */
-    white-space: nowrap;
-    /* ไม่ตัดบรรทัด */
+.pager .info{
+  color: var(--muted);
+  font-size: 12px;
+  margin-right: auto;
 }
 
-/* คอลัมน์ตัวเลขให้ชิดขวาอ่านง่าย */
-td.num,
-th.num {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    /* ตัวเลขเรียงสวย */
+.pager button{
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid var(--border);
+  padding: 7px 10px;
+  border-radius: 10px;
 }
 
-/* ===== ทำให้ตาราง Overview (2 คอลัมน์) สวยขึ้น ===== */
+.pager button:hover{
+  border-color: rgba(37,99,235,0.35);
+  box-shadow: 0 0 0 4px rgba(37,99,235,0.10);
+}
+
+.pager button:disabled{
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pager button.active{
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+/* ✅ ปรับเฉพาะกล่อง Pie: Governance Status */
+#gov_status_chart_box.chart-box {
+  height: 280px;        /* ปรับได้ 280-360 */
+  max-width: 520px;     /* ให้พอดีกับการ์ด */
+  padding: 10px;        /* ลด padding ไม่ให้กราฟลอย */
+}
+
+/* กัน legend เบียดเกินไป */
+#gov_status_chart_box .chartjs-legend,
+#gov_status_chart_box canvas {
+  max-width: 100%;
+}
+
+/* Overview table widths */
 #dash_overview table th:nth-child(1),
-#dash_overview table td:nth-child(1) {
-    width: 70%;
-}
-
+#dash_overview table td:nth-child(1){ width: 70%; }
 #dash_overview table th:nth-child(2),
-#dash_overview table td:nth-child(2) {
-    width: 30%;
+#dash_overview table td:nth-child(2){ width: 30%; }
+
+/* ===== Focus mode: การ์ดที่ถูกเลือกอยู่กลาง + กว้างเต็มแถว ===== */
+.dash-grid.has-focus .card:not(.is-focused){
+  opacity: .55;
+  filter: saturate(.9);
 }
 
-/* หัวข้อกลางสำหรับการ์ดที่มี chart */
-.chart-title {
-    text-align: center;
-    margin: 0 0 16px;
-    /* เดิม 8px -> เพิ่มเป็น 16px (ปรับได้) */
-    padding-top: 4px;
-    /* เพิ่มนิดให้ดูโล่ง */
+.dash-grid.has-focus .card:not(.is-focused):hover{
+  opacity: .8;
+}
+
+/* การ์ดที่โฟกัส */
+.card.is-focused{
+  grid-column: 1 / -1;          /* ขยายเต็ม 2 คอลัมน์ */
+  max-width: 980px;             /* ให้ดูอยู่กลาง ไม่กว้างจนล้น */
+  margin-left: auto;
+  margin-right: auto;
+  border-color: rgba(37,99,235,0.35);
+  box-shadow: 0 18px 45px rgba(37,99,235,0.12), var(--shadow);
+}
+
+/* มือถือให้เต็มจอ */
+@media (max-width: 900px){
+  .card.is-focused{
+    max-width: 100%;
+  }
+}
+
+/* ===== Modal (Table Center) ===== */
+.modal{
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 18px;
+}
+
+.modal.hidden{ display:none !important; }
+
+.modal-backdrop{
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.modal-panel{
+  position: relative;
+  width: min(980px, 100%);
+  max-height: min(78vh, 800px);
+  background: var(--card);
+  border: 1px solid rgba(226,232,240,0.95);
+  border-radius: 16px;
+  box-shadow: 0 30px 80px rgba(15,23,42,0.25);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-head{
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title{
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.modal-close{
+  border: 1px solid var(--border);
+  background: #fff;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.modal-body{
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+/* ใน modal ให้ตารางดูไม่บีบ */
+.modal-body table{
+  table-layout: auto;
+}
+.modal-body th, .modal-body td{
+  white-space: nowrap;
+}
+
+/* ===== Chart in Modal ===== */
+.modal-body .chart-box{
+  height: 360px;        /* ปรับได้ 320-420 */
+  max-width: 100%;
+  margin: 0 0 12px;
+  cursor: default;      /* อยู่ใน modal ไม่ต้องชี้ว่า click */
+}
+
+#tab_gov .dash-grid{
+  grid-template-columns: 1fr;
 }
