@@ -53,6 +53,56 @@ let chartGenderRatio = null;
 
 const API_BASE = "https://work-i-go-admin.onrender.com";
 
+function clearFocus() {
+  document.querySelectorAll(".dash-grid.has-focus").forEach(grid => {
+    grid.classList.remove("has-focus");
+    grid.querySelectorAll(".card.is-focused").forEach(c => c.classList.remove("is-focused"));
+  });
+
+  // ✅ ออกโฟกัสแล้วพับตารางกลับไป
+  hideDashDetails();
+
+  requestAnimationFrame(() => resizeVisibleCharts());
+}
+
+function hideDashDetails() {
+  // ตารางที่ต้องซ่อนเมื่อ "ออกจากโฟกัส"
+  const ids = [
+    "dash_market",
+    "dash_hire_gender",
+    "dash_gender_ratio",
+    "dash_geo",
+    "dash_gov_status"
+  ];
+
+  ids.forEach(id => document.getElementById(id)?.classList.add("hidden"));
+
+  // pager ที่ต้องซ่อนด้วย (ถ้ามี)
+  document.getElementById("dash_geo_pager")?.classList.add("hidden");
+}
+
+function focusCard(card) {
+  if (!card) return;
+
+  const grid = card.closest(".dash-grid");
+  if (!grid) return;
+
+  // โฟกัสใบเดียวใน grid
+  grid.classList.add("has-focus");
+  grid.querySelectorAll(".card.is-focused").forEach(c => c.classList.remove("is-focused"));
+  card.classList.add("is-focused");
+
+  // เลื่อนให้มาอยู่กลางจอ (ช่วยให้ UX ดี)
+  card.scrollIntoView({ behavior: "smooth", block: "center" });
+
+  requestAnimationFrame(() => resizeVisibleCharts());
+}
+
+// ปิด focus ด้วยปุ่ม Esc
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") clearFocus();
+});
+
 function resizeVisibleCharts() {
   // ถ้า tab_gov แสดงอยู่ ค่อย resize
   const govTab = document.getElementById("tab_gov");
@@ -82,12 +132,130 @@ function resizeVisibleCharts() {
   }
 }
 
+let modalOpen = false;
+
+// เก็บตำแหน่งเดิมของ element ก่อนย้ายเข้า modal
+const modalReturnMap = new Map(); // el -> placeholderNode
+
+const modalTypeMap = new Map(); // el -> "chart" | "table" | "pager"
+
+function openTableModal(title, chartBoxEl, tableEl, pagerEl, chartGetter) {
+  const modal = document.getElementById("table_modal");
+  const body = document.getElementById("modal_body");
+  const titleEl = document.getElementById("modal_title");
+  const closeBtn = document.getElementById("modal_close");
+
+  if (!modal || !body || !titleEl || !closeBtn) return;
+  if (!tableEl) return;
+
+  // กันกดซ้ำตอน modal เปิดอยู่
+  if (modalOpen) return;
+
+  titleEl.textContent = title || "Detail";
+  body.innerHTML = "";
+
+  // ===== 1) ย้าย chartBox เข้า modal ก่อน =====
+  if (chartBoxEl) {
+    const phChart = document.createComment("chart-placeholder");
+    chartBoxEl.parentNode.insertBefore(phChart, chartBoxEl);
+    modalReturnMap.set(chartBoxEl, phChart);
+    modalTypeMap.set(chartBoxEl, "chart");
+
+    chartBoxEl.classList.remove("hidden");
+    body.appendChild(chartBoxEl);
+  }
+
+  // ===== 2) ย้าย table เข้า modal =====
+  const phTable = document.createComment("table-placeholder");
+  tableEl.parentNode.insertBefore(phTable, tableEl);
+  modalReturnMap.set(tableEl, phTable);
+  modalTypeMap.set(chartBoxEl, "chart");
+
+  tableEl.classList.remove("hidden");
+  body.appendChild(tableEl);
+
+  // ===== 3) ย้าย pager (ถ้ามี) =====
+  if (pagerEl) {
+    const phPager = document.createComment("pager-placeholder");
+    pagerEl.parentNode.insertBefore(phPager, pagerEl);
+    modalReturnMap.set(pagerEl, phPager);
+    modalTypeMap.set(chartBoxEl, "chart");
+
+    pagerEl.classList.remove("hidden");
+    body.appendChild(pagerEl);
+  }
+
+  // เปิด modal
+  modal.classList.remove("hidden");
+  modal.setAttribute("aria-hidden", "false");
+  modalOpen = true;
+
+  // ปิด modal
+  closeBtn.onclick = () => closeTableModal(true);
+  modal.onclick = (e) => {
+    if (e.target && e.target.matches("[data-modal-close]")) closeTableModal(true);
+  };
+
+  // ✅ สั่ง resize chart หลังย้ายเข้า modal
+  requestAnimationFrame(() => {
+    const ch = typeof chartGetter === "function" ? chartGetter() : null;
+    if (ch) { ch.resize(); ch.update(); }
+  });
+}
+
+function closeTableModal(alsoClearFocus = false) {
+  const modal = document.getElementById("table_modal");
+  const body = document.getElementById("modal_body");
+  if (!modal || !body) return;
+
+  // ย้าย element กลับที่เดิม
+  for (const [el, placeholder] of modalReturnMap.entries()) {
+    if (!placeholder || !placeholder.parentNode) continue;
+
+    placeholder.parentNode.insertBefore(el, placeholder);
+    placeholder.parentNode.removeChild(placeholder);
+
+    const t = modalTypeMap.get(el);
+
+    // ✅ ซ่อนเฉพาะ table/pager
+    if (t === "table" || t === "pager") {
+      el.classList.add("hidden");
+    } else if (t === "chart") {
+      el.classList.remove("hidden"); // ✅ chart ต้องโชว์กลับ
+    }
+  }
+
+  modalReturnMap.clear();
+  modalTypeMap.clear();
+
+  // ปิด modal
+  modal.classList.add("hidden");
+  modal.setAttribute("aria-hidden", "true");
+  modalOpen = false;
+
+  hideDashDetails();
+
+  requestAnimationFrame(() => resizeVisibleCharts());
+
+  if (alsoClearFocus) clearFocus();
+}
+
+// ปิด modal ด้วย Esc
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (modalOpen) closeTableModal(true);
+    else clearFocus();
+  }
+});
+
 function initTabs() {
   const buttons = document.querySelectorAll(".tab-btn");
   const panels = document.querySelectorAll(".tab-panel");
 
   buttons.forEach(btn => {
     btn.addEventListener("click", () => {
+      clearFocus();
+
       buttons.forEach(b => b.classList.remove("active"));
       panels.forEach(p => p.classList.remove("active"));
 
@@ -104,30 +272,54 @@ function initTabs() {
 
 function initChartTableToggles() {
   const bindings = [
-    // Dashboard tab
-    { boxId: "market_chart_box", tableId: "dash_market" },
-    { boxId: "hire_gender_chart_box", tableId: "dash_hire_gender" },
-    { boxId: "gender_ratio_chart_box", tableId: "dash_gender_ratio" },
-    { boxId: "geo_chart_box", tableId: "dash_geo", pagerId: "dash_geo_pager" },
-
-    // Gov tab
-    { boxId: "gov_status_chart_box", tableId: "dash_gov_status" },
+    {
+      boxId: "market_chart_box",
+      tableId: "dash_market",
+      title: "Labor Market",
+      chartGetter: () => chartMarket
+    },
+    {
+      boxId: "hire_gender_chart_box",
+      tableId: "dash_hire_gender",
+      title: "Hire rate by Gender",
+      chartGetter: () => chartHireGender
+    },
+    {
+      boxId: "gender_ratio_chart_box",
+      tableId: "dash_gender_ratio",
+      title: "Gender ratio by Job Type",
+      chartGetter: () => chartGenderRatio
+    },
+    {
+      boxId: "geo_chart_box",
+      tableId: "dash_geo",
+      pagerId: "dash_geo_pager",
+      title: "Geographic Distribution",
+      chartGetter: () => chartGeoPosts
+    },
+    {
+      boxId: "gov_status_chart_box",
+      tableId: "dash_gov_status",
+      title: "Governance Status",
+      chartGetter: () => chartGovStatus
+    },
   ];
 
-  bindings.forEach(({ boxId, tableId, pagerId }) => {
+  bindings.forEach(({ boxId, tableId, pagerId, title, chartGetter }) => {
     const box = document.getElementById(boxId);
     const table = document.getElementById(tableId);
     const pager = pagerId ? document.getElementById(pagerId) : null;
 
     if (!box || !table) return;
 
-    // คลิกที่กราฟ -> toggle ตาราง (และ pager ถ้ามี)
     box.addEventListener("click", () => {
-      // ถ้ากราฟยัง hidden อยู่ แปลว่ายังไม่มีกราฟ ไม่ต้องทำอะไร
       if (box.classList.contains("hidden")) return;
+      if (modalOpen) return;
 
-      table.classList.toggle("hidden");
-      if (pager) pager.classList.toggle("hidden");
+      focusCard(box.closest(".card"));
+
+      // ✅ เปิด modal พร้อม "chart + table (+pager)"
+      openTableModal(title, box, table, pager, chartGetter);
     });
   });
 }
@@ -138,6 +330,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   initTabs(); // ✅ เพิ่มบรรทัดนี้
   initChartTableToggles();
   loadGlobalSummary();
+});
+
+document.addEventListener("mousedown", (e) => {
+  const focused = document.querySelector(".card.is-focused");
+  if (!focused) return;
+
+  // ถ้าคลิกอยู่ใน modal panel ไม่ต้อง clear
+  const modalPanel = document.querySelector("#table_modal .modal-panel");
+  if (modalPanel && modalPanel.contains(e.target)) return;
+
+  // คลิกนอกการ์ดที่โฟกัส -> clear
+  if (!focused.contains(e.target)) clearFocus();
 });
 
 function wireEvents() {
@@ -880,9 +1084,16 @@ function renderMarketChart(rows) {
     },
     options: {
       responsive: true,
-      plugins: { legend: { position: "top" } },
+      maintainAspectRatio: false, // ✅ สำคัญ ทำให้เต็ม chart-box
+      plugins: {
+        legend: {
+          position: "top",
+          labels: { boxWidth: 10, boxHeight: 10, padding: 10 }
+        }
+      },
       scales: { y: { beginAtZero: true } }
     }
+
   });
 }
 
@@ -912,8 +1123,18 @@ function renderGovStatusChart(rows) {
     },
     options: {
       responsive: true,
-      maintainAspectRatio: true,
-      plugins: { legend: { position: "top" } }
+      maintainAspectRatio: false,  // ✅ ให้กราฟยืดตามกล่อง
+      plugins: {
+        legend: {
+          position: "bottom",      // ✅ ลดการกินพื้นที่ด้านบน
+          labels: {
+            boxWidth: 12,
+            boxHeight: 12,
+            padding: 12,
+            font: { size: 12 }
+          }
+        }
+      }
     }
   });
 
@@ -977,9 +1198,16 @@ function renderGeoPostsChart(geoRows) {
       },
       options: {
         responsive: true,
-        plugins: { legend: { display: true } },
+        maintainAspectRatio: false, // ✅ สำคัญ ทำให้เต็ม chart-box
+        plugins: {
+          legend: {
+            position: "top",
+            labels: { boxWidth: 10, boxHeight: 10, padding: 10 }
+          }
+        },
         scales: { y: { beginAtZero: true } }
       }
+
     });
 
     return;
@@ -1045,7 +1273,13 @@ function renderGeoTopChart(geoTop) {
     },
     options: {
       responsive: true,
-      plugins: { legend: { display: true } },
+      maintainAspectRatio: false, // ✅ สำคัญ ทำให้เต็ม chart-box
+      plugins: {
+        legend: {
+          position: "top",
+          labels: { boxWidth: 10, boxHeight: 10, padding: 10 }
+        }
+      },
       scales: { y: { beginAtZero: true } }
     }
   });
@@ -1078,9 +1312,14 @@ function renderHireGenderChart(rows) {
     },
     options: {
       responsive: true,
-      scales: {
-        y: { beginAtZero: true }
-      }
+      maintainAspectRatio: false, // ✅ สำคัญ ทำให้เต็ม chart-box
+      plugins: {
+        legend: {
+          position: "top",
+          labels: { boxWidth: 10, boxHeight: 10, padding: 10 }
+        }
+      },
+      scales: { y: { beginAtZero: true } }
     }
   });
 }
