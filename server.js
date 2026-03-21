@@ -1185,25 +1185,8 @@ app.get("/dashboard/revenue/summary", async (req, res) => {
     const hasPromotionEndDate = await hasColumn(pool, "employers", "end_date_promotion");
     const createdAtSource = await detectEmployerCreatedAtSource();
 
-    const { geography, province, district, job_type } = req.query;
     const params = [];
-    let employerScopeJoin = "";
-    let employerScopeWhere = "WHERE 1=1";
-
-    const needsJobpostScope = !!(geography || province || district || job_type);
-
-    if (needsJobpostScope) {
-      employerScopeJoin = `
-        JOIN jobposts jp ON jp.employer_id = e.employer_id
-        JOIN sub_districts sd ON jp.sub_district_id = sd.id
-        JOIN districts d ON sd.district_id = d.id
-        JOIN provinces p ON d.province_id = p.id
-      `;
-      if (geography) employerScopeWhere += ` AND p.geography_id = ${addParam(params, geography)}`;
-      if (province)  employerScopeWhere += ` AND p.id = ${addParam(params, province)}`;
-      if (district)  employerScopeWhere += ` AND d.id = ${addParam(params, district)}`;
-      if (job_type)  employerScopeWhere += ` AND jp.job_type_id = ${addParam(params, job_type)}`;
-    }
+    const employerScopeWhere = "WHERE 1=1";
 
     const promoJoin = (promotionTableExists && hasPromotionId)
       ? `LEFT JOIN promotion pr ON pr.id = e.promotion_id`
@@ -1261,7 +1244,6 @@ app.get("/dashboard/revenue/summary", async (req, res) => {
         FROM employers e
         ${promoJoin}
         ${createdAtSource.joinSql}
-        ${employerScopeJoin}
         ${employerScopeWhere}
       ),
       totals AS (
