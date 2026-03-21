@@ -241,3 +241,10 @@ button{
   .chart-box{ height:300px; }
   .chart-box-tall{ height:360px; }
 }
+
+
+.market-filters-card{
+  position: static;
+  top: auto;
+  margin-bottom: 16px;
+}

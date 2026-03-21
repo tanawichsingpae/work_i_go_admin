@@ -34,38 +34,6 @@
       </button>
     </div>
 
-   <section class="card filters-card">
-  <div class="filters-head">
-    <div>
-      <div class="filters-title">ตัวกรองหลัก</div>
-    </div>
-  </div>
-  <div class="filters filters-main" style="display: flex; align-items: center;">
-    <select id="geography"><option value="">ทุกภาค</option></select>
-    <select id="province" disabled><option value="">ทุกจังหวัด</option></select>
-    <select id="job_type">
-      <option value="">ทุกประเภทงาน</option>
-      <option value="1">งานบริการ</option>
-      <option value="2">งานโรงงาน</option>
-      <option value="3">งานขนส่ง</option>
-      <option value="4">งานออฟฟิศ</option>
-      <option value="5">งานขาย</option>
-      <option value="6">งานไอที</option>
-      <option value="7">งานของผู้สูงอายุ</option>
-    </select>
-   <div class="filters-actions" style="display: flex; gap: 8px; margin-left: auto;">
-  <button id="filterBtn" class="primary-btn" type="button" 
-    style="height: 38px; padding: 0 16px; box-sizing: border-box; min-width: 130px;">
-    กรองข้อมูล
-  </button>
-  <button id="resetBtn" type="button" class="reset-btn" 
-    style="height: 38px; padding: 0 16px; box-sizing: border-box; min-width: 100px;">
-    รีเซ็ต
-  </button>
-</div>
-  </div>
-    </section>
-
     <!-- TAB: Revenue -->
     <section id="tab_revenue" class="tab-panel active">
       <div class="kpi-grid">
@@ -109,17 +77,11 @@
         </article>
 
         <article class="card dash-span-2">
-  <div class="card-head" style="display: flex; align-items: center; justify-content: space-between;">
+  <div class="card-head">
     <div>
       <h3 class="card-title">แนวโน้มรายได้รายเดือน</h3>
       <p class="muted">แนวโน้มรายได้รายเดือนอิงตามวันที่เริ่มแพ็กเกจ/วันที่สมัคร</p>
     </div>
-    <select id="month_filter" style="width: auto; min-width: 160px;">
-      <option value="all">ทั้งหมด</option>
-      <option value="3">3 เดือนล่าสุด</option>
-      <option value="6">6 เดือนล่าสุด</option>
-      <option value="12">12 เดือน</option>
-    </select>
   </div>
   <div class="chart-box chart-box-tall">
     <canvas id="chart_revenue_trend"></canvas>
@@ -130,6 +92,38 @@
 
     <!-- TAB: Market -->
     <section id="tab_market" class="tab-panel">
+      <section class="card filters-card market-filters-card">
+        <div class="filters-head">
+          <div>
+            <div class="filters-title">ตัวกรองสำหรับหน้า วิเคราะห์ตลาดงาน</div>
+          </div>
+        </div>
+        <div class="filters filters-main" style="display: flex; align-items: center;">
+          <select id="geography"><option value="">ทุกภาค</option></select>
+          <select id="province" disabled><option value="">ทุกจังหวัด</option></select>
+          <select id="job_type">
+            <option value="">ทุกประเภทงาน</option>
+            <option value="1">งานบริการ</option>
+            <option value="2">งานโรงงาน</option>
+            <option value="3">งานขนส่ง</option>
+            <option value="4">งานออฟฟิศ</option>
+            <option value="5">งานขาย</option>
+            <option value="6">งานไอที</option>
+            <option value="7">งานของผู้สูงอายุ</option>
+          </select>
+          <div class="filters-actions" style="display: flex; gap: 8px; margin-left: auto;">
+            <button id="filterBtn" class="primary-btn" type="button"
+              style="height: 38px; padding: 0 16px; box-sizing: border-box; min-width: 130px;">
+              กรองข้อมูล
+            </button>
+            <button id="resetBtn" type="button" class="reset-btn"
+              style="height: 38px; padding: 0 16px; box-sizing: border-box; min-width: 100px;">
+              รีเซ็ต
+            </button>
+          </div>
+        </div>
+      </section>
+
       <div class="dash-grid">
         <article class="card dash-span-2">
           <div class="card-head card-head-stack">

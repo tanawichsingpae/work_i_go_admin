@@ -29,47 +29,6 @@ const charts = {
   govStatus: null,
 };
 
-// cache full trend data for month filter re-render
-let trendCache = [];
-
-function renderTrendFromCache() {
-  if (!trendCache.length) return;
-  const monthVal = document.getElementById('month_filter')?.value || 'all';
-  const trendData = monthVal === 'all'
-    ? trendCache
-    : trendCache.slice(-parseInt(monthVal));
-
-  createOrReplaceChart('revenueTrend', 'chart_revenue_trend', {
-    type: 'line',
-    data: {
-      labels: trendData.map(r => r.label),
-      datasets: [{
-        label: 'รายได้โดยประมาณ',
-        data: trendData.map(r => r.value),
-        borderColor: COLORS.blue700,
-        backgroundColor: 'rgba(59,130,246,0.18)',
-        pointBackgroundColor: COLORS.blue700,
-        pointRadius: 4,
-        pointHoverRadius: 5,
-        fill: true,
-        tension: 0.3
-      }]
-    },
-    options: baseOptions({
-      scales: { y: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } },
-      plugins: {
-        datalabels: {
-          color: COLORS.blue900,
-          align: 'top',
-          anchor: 'end',
-          formatter: (v) => moneyFmt(v)
-        },
-        tooltip: { callbacks: { label: (ctx) => moneyFmt(ctx.raw) } }
-      }
-    })
-  });
-  requestAnimationFrame(resizeAllCharts);
-}
 
 function buildCommonParams() {
   return new URLSearchParams({
@@ -142,7 +101,6 @@ function wireEvents() {
 
   document.getElementById('marketFilterBtn').addEventListener('click', loadMarketChartOnly);
 
-  document.getElementById('month_filter')?.addEventListener('change', renderTrendFromCache);
 }
 
 function initTabs() {
@@ -305,10 +263,6 @@ function buildRevenueMetrics(revenue) {
     value: Number(item.value || 0)
   })) : [];
 
-  if (!trend.length) {
-    const currentLabel = new Date().toLocaleDateString('th-TH', { month: 'short', year: '2-digit' });
-    trend = [{ label: currentLabel, value: Number(revenue?.mrr || 0) }];
-  }
 
   return {
     mrr: Number(revenue?.mrr || 0),
@@ -352,13 +306,24 @@ function renderRevenueCharts(revenue) {
       }]
     },
     options: baseOptions({
-      scales: { y: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } },
+      layout: { padding: { top: 24 } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          suggestedMax: Math.max(...packageValues, 0) * 1.15 || 10,
+          grid: { color: COLORS.grid },
+          ticks: { color: '#475569' }
+        }
+      },
       plugins: {
         legend: { display: false },
         datalabels: {
           color: COLORS.blue900,
           anchor: 'end',
           align: 'end',
+          offset: 6,
+          clamp: false,
+          clip: false,
           formatter: (v) => moneyFmt(v)
         },
         tooltip: { callbacks: { label: (ctx) => moneyFmt(ctx.raw) } }
@@ -380,19 +345,13 @@ function renderRevenueCharts(revenue) {
     options: pieOptions(moneyFmt)
   });
 
-  trendCache = metrics.trend;
-  const monthVal = document.getElementById('month_filter')?.value || 'all';
-  const trendData = monthVal === 'all'
-    ? trendCache
-    : trendCache.slice(-parseInt(monthVal));
-
   createOrReplaceChart('revenueTrend', 'chart_revenue_trend', {
     type: 'line',
     data: {
-      labels: trendData.map(r => r.label),
+      labels: metrics.trend.map(r => r.label),
       datasets: [{
         label: 'รายได้ต่อเดือน',
-        data: trendData.map(r => r.value),
+        data: metrics.trend.map(r => r.value),
         borderColor: COLORS.blue700,
         backgroundColor: 'rgba(59,130,246,0.18)',
         pointBackgroundColor: COLORS.blue700,
@@ -403,12 +362,23 @@ function renderRevenueCharts(revenue) {
       }]
     },
     options: baseOptions({
-      scales: { y: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } },
+      layout: { padding: { top: 24 } },
+      scales: {
+        y: {
+          beginAtZero: true,
+          suggestedMax: Math.max(...metrics.trend.map(r => Number(r.value || 0)), 0) * 1.12 || 10,
+          grid: { color: COLORS.grid },
+          ticks: { color: '#475569' }
+        }
+      },
       plugins: {
         datalabels: {
           color: COLORS.blue900,
           align: 'top',
           anchor: 'end',
+          offset: 6,
+          clamp: false,
+          clip: false,
           formatter: (v) => moneyFmt(v)
         },
         tooltip: { callbacks: { label: (ctx) => moneyFmt(ctx.raw) } }
@@ -576,7 +546,7 @@ async function loadAllCharts() {
 
   try {
     const [revenue, overview, market, wageDist, geoTop, genderRatio, govStatus] = await Promise.all([
-      fetchJson(`${API_BASE}/dashboard/revenue/summary?${commonParams}`),
+      fetchJson(`${API_BASE}/dashboard/revenue/summary`),
       fetchJson(`${API_BASE}/dashboard/overview?${commonParams}`),
       fetchJson(`${API_BASE}/dashboard/market?${marketParams}`),
       fetchJson(`${API_BASE}/dashboard/wage-distribution?${commonParams}`),
