@@ -2,205 +2,193 @@
 <html lang="th">
 <head>
   <meta charset="UTF-8" />
-  <title>Job Admin Dashboard</title>
-
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>แดชบอร์ดผู้ดูแลระบบงาน</title>
   <link rel="stylesheet" href="./styles.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
 </head>
-
 <body>
   <div class="container">
-    <!-- Top bar -->
     <header class="topbar">
       <div>
-        <h1 class="title">Job Admin Dashboard</h1>
-        <p class="subtitle">Static analysis from Neon PostgreSQL (manual SQL)</p>
+        <h1 class="title">แดชบอร์ดผู้ดูแลระบบงาน</h1>
       </div>
-      <div class="topbar-actions">
-        <span class="pill">Chart: click to toggle table</span>
-      </div>
+      <!-- <div class="topbar-actions">
+        <span class="pill">เวอร์ชันเน้นรายได้</span>
+      </div> -->
     </header>
 
-    <!-- Filters (sticky) -->
-    <div class="card filters-card">
-      <div class="filters-head">
-        <div>
-          <div class="filters-title">Filters</div>
-          <div class="muted">เลือกเงื่อนไขแล้วกด Filter</div>
-        </div>
-        <div class="filters-actions">
-          <button class="primary-btn" onclick="onFilterClick()">Filter</button>
-          <button type="button" class="reset-btn" onclick="resetFilters()">Reset</button>
-        </div>
-      </div>
-
-      <div class="filters">
-        <select id="geography">
-          <option value="">ทุกภาค</option>
-        </select>
-
-        <select id="province" disabled>
-          <option value="">ทุกจังหวัด</option>
-        </select>
-
-        <select id="district" disabled>
-          <option value="">ทุกอำเภอ</option>
-        </select>
-
-        <select id="job_type">
-          <option value="">ทุกประเภท</option>
-          <option value="1">Service</option>
-          <option value="2">Factory</option>
-          <option value="3">Transportation</option>
-          <option value="4">Office</option>
-          <option value="5">Sales</option>
-          <option value="6">IT</option>
-          <option value="7">Elder</option>
-        </select>
-
-        <select id="gender">
-          <option value="">ทุกเพศ</option>
-          <option value="male">ชาย</option>
-          <option value="female">หญิง</option>
-        </select>
-
-        <input id="age_min" type="number" min="0" placeholder="อายุเริ่มต้น">
-        <input id="age_max" type="number" min="0" placeholder="อายุสิ้นสุด">
-
-        <input id="min_wage" type="number" placeholder="ค่าแรงขั้นต่ำ">
-        <input id="max_wage" type="number" placeholder="ค่าแรงสูงสุด">
-      </div>
-    </div>
-
-    <!-- Tabs -->
     <div class="tabs">
-      <button class="tab-btn active" data-tab="tab_global">Global Summary</button>
-      <button class="tab-btn" data-tab="tab_main">Main Table</button>
-      <button class="tab-btn" data-tab="tab_dash">Dashboard</button>
-      <button class="tab-btn" data-tab="tab_gov">Governance</button>
+      <button
+        class="tab-btn active"
+        data-tab="tab_revenue"
+        style="height:52px; padding:0 30px; font-size:17px; border-radius:14px; font-weight:600;">
+        รายได้
+      </button>
+      <button
+        class="tab-btn"
+        data-tab="tab_market"
+        style="height:52px; padding:0 30px; font-size:17px; border-radius:14px; font-weight:600;">
+        วิเคราะห์ตลาดงาน
+      </button>
     </div>
 
-    <!-- TAB 1 -->
-    <div id="tab_global" class="tab-panel active">
-      <div class="card">
-        <div class="card-head">
-          <h3 class="card-title">Global Summary</h3>
-          <p class="muted">ข้อมูลนี้ไม่เปลี่ยนตาม Filter</p>
-        </div>
-        <table id="global_summary"></table>
-      </div>
-    </div>
-
-    <!-- TAB 2 -->
-    <div id="tab_main" class="tab-panel">
-      <div class="card">
-        <div class="card-head">
-          <h3 class="card-title">Main Table</h3>
-          <p class="muted">กดหัวตารางเพื่อ sort • ใช้ pager ด้านล่างเพื่อเปลี่ยนหน้า</p>
-        </div>
-        <table id="result"></table>
-        <div id="result_pager"></div>
-      </div>
-    </div>
-
-    <!-- TAB 3 -->
-    <div id="tab_dash" class="tab-panel">
-      <div class="dash-grid">
-        <div class="card dash-span-2">
-          <div class="card-head">
-            <h3 class="card-title">System Overview</h3>
-            <p class="muted">ภาพรวมของระบบภายใต้ Filter ที่เลือก</p>
-          </div>
-          <div id="dash_overview"></div>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h3 class="card-title">Labor Market</h3>
-            <p class="muted">Posts / Applications / Hired</p>
-          </div>
-          <div class="chart-box hidden" id="market_chart_box">
-            <canvas id="chart_market"></canvas>
-          </div>
-          <table id="dash_market" class="hidden"></table>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h3 class="card-title">Hire rate by Gender</h3>
-            <p class="muted">อัตราการได้งานจำแนกเพศ</p>
-          </div>
-          <div class="chart-box hidden" id="hire_gender_chart_box">
-            <canvas id="chart_hire_gender"></canvas>
-          </div>
-          <table id="dash_hire_gender" class="hidden"></table>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h3 class="card-title">Gender ratio by Job Type</h3>
-            <p class="muted">สัดส่วนผู้สมัครชาย/หญิง</p>
-          </div>
-          <div class="chart-box hidden" id="gender_ratio_chart_box">
-            <canvas id="chart_gender_ratio"></canvas>
-          </div>
-          <table id="dash_gender_ratio" class="hidden"></table>
-        </div>
-
-        <div class="card">
-          <div class="card-head">
-            <h3 class="card-title">Geographic Distribution</h3>
-            <p class="muted">คลิกกราฟเพื่อสลับเป็นตาราง</p>
-          </div>
-          <div class="chart-box hidden" id="geo_chart_box">
-            <canvas id="chart_geo_posts"></canvas>
-          </div>
-          <table id="dash_geo" class="hidden"></table>
-          <div id="dash_geo_pager" class="hidden"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- TAB 4 -->
-    <div id="tab_gov" class="tab-panel">
-      <div class="dash-grid">
-        <div class="card">
-          <div class="card-head">
-            <h3 class="card-title">Governance Status</h3>
-            <p class="muted">สถานะการอนุมัติ Job Posts</p>
-          </div>
-          <div class="chart-box hidden" id="gov_status_chart_box">
-            <canvas id="chart_gov_status"></canvas>
-          </div>
-          <table id="dash_gov_status" class="hidden"></table>
-        </div>
-
-        <div class="card dash-span-2">
-          <div class="card-head">
-            <h3 class="card-title">Workload by LCO</h3>
-            <p class="muted">งานที่รับผิดชอบโดย LCO</p>
-          </div>
-          <table id="dash_gov_lco"></table>
-          <div id="dash_gov_lco_pager"></div>
-        </div>
-      </div>
-    </div>
-
-  </div>
-
-  <!-- Table Modal -->
-  <div id="table_modal" class="modal hidden" aria-hidden="true">
-    <div class="modal-backdrop" data-modal-close></div>
-
-    <div class="modal-panel" role="dialog" aria-modal="true">
-      <div class="modal-head">
-        <div id="modal_title" class="modal-title">Table</div>
-        <button id="modal_close" class="modal-close" type="button">✕</button>
-      </div>
-      <div id="modal_body" class="modal-body"></div>
+   <section class="card filters-card">
+  <div class="filters-head">
+    <div>
+      <div class="filters-title">ตัวกรองหลัก</div>
     </div>
   </div>
+  <div class="filters filters-main" style="display: flex; align-items: center;">
+    <select id="geography"><option value="">ทุกภาค</option></select>
+    <select id="province" disabled><option value="">ทุกจังหวัด</option></select>
+    <select id="job_type">
+      <option value="">ทุกประเภทงาน</option>
+      <option value="1">งานบริการ</option>
+      <option value="2">งานโรงงาน</option>
+      <option value="3">งานขนส่ง</option>
+      <option value="4">งานออฟฟิศ</option>
+      <option value="5">งานขาย</option>
+      <option value="6">งานไอที</option>
+      <option value="7">งานของผู้สูงอายุ</option>
+    </select>
+   <div class="filters-actions" style="display: flex; gap: 8px; margin-left: auto;">
+  <button id="filterBtn" class="primary-btn" type="button" 
+    style="height: 38px; padding: 0 16px; box-sizing: border-box; min-width: 130px;">
+    กรองข้อมูล
+  </button>
+  <button id="resetBtn" type="button" class="reset-btn" 
+    style="height: 38px; padding: 0 16px; box-sizing: border-box; min-width: 100px;">
+    รีเซ็ต
+  </button>
+</div>
+  </div>
+    </section>
 
+    <!-- TAB: Revenue -->
+    <section id="tab_revenue" class="tab-panel active">
+      <div class="kpi-grid">
+        <article class="card stat-card">
+          <div class="stat-label">รายได้ต่อเดือน</div>
+          <div id="kpi_mrr" class="stat-value">-</div>
+          <div class="muted">คำนวณจากแพ็กเกจนายจ้างปัจจุบัน</div>
+        </article>
+        <article class="card stat-card">
+          <div class="stat-label">รายได้ต่อปี</div>
+          <div id="kpi_arr" class="stat-value">-</div>
+          <div class="muted">คำนวณจากรายได้ต่อเดือน x 12</div>
+        </article>
+        <article class="card stat-card">
+          <div class="stat-label">สัดส่วนนายจ้างแบบเสียเงิน</div>
+          <div id="kpi_paid_ratio" class="stat-value">-</div>
+          <div class="muted">สัดส่วนผู้ใช้งานแบบเสียเงิน</div>
+        </article>
+        <article class="card stat-card">
+          <div class="stat-label">รายได้จาก Verified Add-on</div>
+          <div id="kpi_verified" class="stat-value">-</div>
+          <div class="muted">คำนวณจาก 19 บาท / เดือน</div>
+        </article>
+      </div>
+
+      <div class="dash-grid">
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title">รายได้แยกตามแพ็กเกจ</h3>
+            <p class="muted">รายได้ต่อเดือนแยกตามแพ็กเกจ</p>
+          </div>
+          <div class="chart-box"><canvas id="chart_revenue_package"></canvas></div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title">สัดส่วนแหล่งรายได้</h3>
+            <p class="muted">สัดส่วนรายได้จริงจากข้อมูลแพ็กเกจ</p>
+          </div>
+          <div class="chart-box"><canvas id="chart_revenue_mix"></canvas></div>
+        </article>
+
+        <article class="card dash-span-2">
+  <div class="card-head" style="display: flex; align-items: center; justify-content: space-between;">
+    <div>
+      <h3 class="card-title">แนวโน้มรายได้รายเดือน</h3>
+      <p class="muted">แนวโน้มรายได้รายเดือนอิงตามวันที่เริ่มแพ็กเกจ/วันที่สมัคร</p>
+    </div>
+    <select id="month_filter" style="width: auto; min-width: 160px;">
+      <option value="all">ทั้งหมด</option>
+      <option value="3">3 เดือนล่าสุด</option>
+      <option value="6">6 เดือนล่าสุด</option>
+      <option value="12">12 เดือน</option>
+    </select>
+  </div>
+  <div class="chart-box chart-box-tall">
+    <canvas id="chart_revenue_trend"></canvas>
+  </div>
+</article>
+      </div>
+    </section>
+
+    <!-- TAB: Market -->
+    <section id="tab_market" class="tab-panel">
+      <div class="dash-grid">
+        <article class="card dash-span-2">
+          <div class="card-head card-head-stack">
+            <div>
+              <h3 class="card-title">ตลาดแรงงานตามประเภทงาน</h3>
+              <p class="muted">เปรียบเทียบจำนวนโพสต์ การสมัคร และการได้งานในแต่ละประเภท</p>
+            </div>
+            <div class="chart-filter-block">
+              <div class="chart-filter-title">ตัวกรองเฉพาะกราฟนี้</div>
+              <div class="chart-inline-filters">
+                <select id="market_gender">
+                  <option value="">ทุกเพศ</option>
+                  <option value="male">ชาย</option>
+                  <option value="female">หญิง</option>
+                </select>
+                <input id="market_age_min" type="number" min="0" placeholder="อายุเริ่มต้น">
+                <input id="market_age_max" type="number" min="0" placeholder="อายุสิ้นสุด">
+                <button id="marketFilterBtn" class="primary-btn" type="button">อัปเดตกราฟนี้</button>
+              </div>
+            </div>
+          </div>
+          <div class="chart-box chart-box-tall"><canvas id="chart_market"></canvas></div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title">การกระจายค่าแรง</h3>
+            <p class="muted">เปรียบเทียบค่าแรง P25 / Median / P75</p>
+          </div>
+          <div class="chart-box"><canvas id="chart_wage"></canvas></div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title">สัดส่วนเพศตามประเภทงาน</h3>
+            <p class="muted">สัดส่วนผู้สมัครชาย/หญิงในแต่ละประเภทงาน</p>
+          </div>
+          <div class="chart-box"><canvas id="chart_gender_ratio"></canvas></div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title">พื้นที่ที่มีประกาศงานสูงสุด</h3>
+            <p class="muted">เลือกจังหวัดแล้วกราฟนี้จะเปลี่ยนเป็นระดับอำเภออัตโนมัติ</p>
+          </div>
+          <div class="chart-box"><canvas id="chart_geo_posts"></canvas></div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <h3 class="card-title">สถานะการอนุมัติประกาศงาน</h3>
+            <p class="muted">สัดส่วนประกาศงานที่อนุมัติ รออนุมัติ และถูกปฏิเสธ</p>
+          </div>
+          <div class="chart-box"><canvas id="chart_gov_status"></canvas></div>
+        </article>
+      </div>
+    </section>
+
+  </div>
   <script src="./app.js"></script>
 </body>
 </html>

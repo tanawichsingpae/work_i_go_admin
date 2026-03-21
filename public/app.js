@@ -1,471 +1,113 @@
-const tableState = {}; // ต้องอยู่ก่อน renderTable เสมอ
+const API_BASE = window.location.origin.startsWith("http")
+  ? window.location.origin
+  : "http://localhost:3000";
 
-const SERVER_SORT_TABLES = new Set(["result", "dash_geo", "dash_gov_lco"]);
-
-function applySortParams(params, tableId) {
-  const st = tableState[tableId];
-  if (st?.sortKey) {
-    params.set("sort_key", st.sortKey);
-    params.set("sort_dir", st.sortDir || "desc");
-  } else {
-    params.delete("sort_key");
-    params.delete("sort_dir");
-  }
+if (window.ChartDataLabels) {
+  Chart.register(window.ChartDataLabels);
 }
 
-function onServerSort(tableId) {
-  // ✅ กด sort แล้วกลับไปหน้า 1 เสมอ
-  if (tableId === "result") {
-    pagerState.main.page = 1;
-    loadData();
-    return;
-  }
-  if (tableId === "dash_geo") {
-    pagerState.geo.page = 1;
-    loadDashboardPaged(); // โหลดเฉพาะตาราง paged
-    return;
-  }
-  if (tableId === "dash_gov_lco") {
-    pagerState.lco.page = 1;
-    loadDashboardPaged();
-    return;
-  }
-}
-
-// ===== Pagination State =====
-const pagerState = {
-  main: { page: 1, pageSize: 20, total: 0 }, // ตารางหลัก
-  geo:  { page: 1, pageSize: 20, total: 0 }, // Geographic Distribution
-  lco:  { page: 1, pageSize: 20, total: 0 }, // Workload by LCO
+const COLORS = {
+  blue900: '#1e3a8a',
+  blue800: '#1d4ed8',
+  blue700: '#2563eb',
+  blue600: '#3b82f6',
+  blue500: '#60a5fa',
+  blue400: '#93c5fd',
+  blue300: '#bfdbfe',
+  slate: '#64748b',
+  grid: 'rgba(148, 163, 184, 0.22)'
 };
 
-function resetPagesToFirst() {
-  pagerState.main.page = 1;
-  pagerState.geo.page = 1;
-  pagerState.lco.page = 1;
-}
+const charts = {
+  revenuePackage: null,
+  revenueMix: null,
+  revenueTrend: null,
+  market: null,
+  wage: null,
+  geo: null,
+  genderRatio: null,
+  govStatus: null,
+};
 
-let chartMarket = null;
-let chartGovStatus = null;
-let chartGeoPosts = null;
-let chartHireGender = null;
-let chartGenderRatio = null;
+// cache full trend data for month filter re-render
+let trendCache = [];
 
-const API_BASE = "https://work-i-go-admin.onrender.com";
+function renderTrendFromCache() {
+  if (!trendCache.length) return;
+  const monthVal = document.getElementById('month_filter')?.value || 'all';
+  const trendData = monthVal === 'all'
+    ? trendCache
+    : trendCache.slice(-parseInt(monthVal));
 
-function clearFocus() {
-  document.querySelectorAll(".dash-grid.has-focus").forEach(grid => {
-    grid.classList.remove("has-focus");
-    grid.querySelectorAll(".card.is-focused").forEach(c => c.classList.remove("is-focused"));
-  });
-
-  // ✅ ออกโฟกัสแล้วพับตารางกลับไป
-  hideDashDetails();
-
-  requestAnimationFrame(() => resizeVisibleCharts());
-}
-
-function hideDashDetails() {
-  // ตารางที่ต้องซ่อนเมื่อ "ออกจากโฟกัส"
-  const ids = [
-    "dash_market",
-    "dash_hire_gender",
-    "dash_gender_ratio",
-    "dash_geo",
-    "dash_gov_status"
-  ];
-
-  ids.forEach(id => document.getElementById(id)?.classList.add("hidden"));
-
-  // pager ที่ต้องซ่อนด้วย (ถ้ามี)
-  document.getElementById("dash_geo_pager")?.classList.add("hidden");
-}
-
-function focusCard(card) {
-  if (!card) return;
-
-  const grid = card.closest(".dash-grid");
-  if (!grid) return;
-
-  // โฟกัสใบเดียวใน grid
-  grid.classList.add("has-focus");
-  grid.querySelectorAll(".card.is-focused").forEach(c => c.classList.remove("is-focused"));
-  card.classList.add("is-focused");
-
-  // เลื่อนให้มาอยู่กลางจอ (ช่วยให้ UX ดี)
-  card.scrollIntoView({ behavior: "smooth", block: "center" });
-
-  requestAnimationFrame(() => resizeVisibleCharts());
-}
-
-// ปิด focus ด้วยปุ่ม Esc
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") clearFocus();
-});
-
-function resizeVisibleCharts() {
-  // ถ้า tab_gov แสดงอยู่ ค่อย resize
-  const govTab = document.getElementById("tab_gov");
-  if (govTab && govTab.classList.contains("active")) {
-    if (chartGovStatus) {
-      chartGovStatus.resize();
-      chartGovStatus.update();
-    }
-  }
-
-  // เผื่ออยากให้ tab_dash ก็ชัวร์ด้วย
-  const dashTab = document.getElementById("tab_dash");
-  if (dashTab && dashTab.classList.contains("active")) {
-    if (chartMarket) {
-      chartMarket.resize();
-      chartMarket.update();
-    }
-    if (chartGeoPosts) {
-      chartGeoPosts.resize();
-      chartGeoPosts.update();
-    }
-    if (chartGenderRatio) {
-      chartGenderRatio.resize();
-      chartGenderRatio.update();
-    }
-
-  }
-}
-
-let modalOpen = false;
-
-// เก็บตำแหน่งเดิมของ element ก่อนย้ายเข้า modal
-const modalReturnMap = new Map(); // el -> placeholderNode
-
-const modalTypeMap = new Map(); // el -> "chart" | "table" | "pager"
-
-function openTableModal(title, chartBoxEl, tableEl, pagerEl, chartGetter) {
-  const modal = document.getElementById("table_modal");
-  const body = document.getElementById("modal_body");
-  const titleEl = document.getElementById("modal_title");
-  const closeBtn = document.getElementById("modal_close");
-
-  if (!modal || !body || !titleEl || !closeBtn) return;
-  if (!tableEl) return;
-
-  // กันกดซ้ำตอน modal เปิดอยู่
-  if (modalOpen) return;
-
-  titleEl.textContent = title || "Detail";
-  body.innerHTML = "";
-
-  // ===== 1) ย้าย chartBox เข้า modal ก่อน =====
-  if (chartBoxEl) {
-    const phChart = document.createComment("chart-placeholder");
-    chartBoxEl.parentNode.insertBefore(phChart, chartBoxEl);
-    modalReturnMap.set(chartBoxEl, phChart);
-    modalTypeMap.set(chartBoxEl, "chart");
-
-    chartBoxEl.classList.remove("hidden");
-    body.appendChild(chartBoxEl);
-  }
-
-  // ===== 2) ย้าย table เข้า modal =====
-  const phTable = document.createComment("table-placeholder");
-  tableEl.parentNode.insertBefore(phTable, tableEl);
-  modalReturnMap.set(tableEl, phTable);
-  modalTypeMap.set(chartBoxEl, "chart");
-
-  tableEl.classList.remove("hidden");
-  body.appendChild(tableEl);
-
-  // ===== 3) ย้าย pager (ถ้ามี) =====
-  if (pagerEl) {
-    const phPager = document.createComment("pager-placeholder");
-    pagerEl.parentNode.insertBefore(phPager, pagerEl);
-    modalReturnMap.set(pagerEl, phPager);
-    modalTypeMap.set(chartBoxEl, "chart");
-
-    pagerEl.classList.remove("hidden");
-    body.appendChild(pagerEl);
-  }
-
-  // เปิด modal
-  modal.classList.remove("hidden");
-  modal.setAttribute("aria-hidden", "false");
-  modalOpen = true;
-
-  // ปิด modal
-  closeBtn.onclick = () => closeTableModal(true);
-  modal.onclick = (e) => {
-    if (e.target && e.target.matches("[data-modal-close]")) closeTableModal(true);
-  };
-
-  // ✅ สั่ง resize chart หลังย้ายเข้า modal
-  requestAnimationFrame(() => {
-    const ch = typeof chartGetter === "function" ? chartGetter() : null;
-    if (ch) { ch.resize(); ch.update(); }
-  });
-}
-
-function closeTableModal(alsoClearFocus = false) {
-  const modal = document.getElementById("table_modal");
-  const body = document.getElementById("modal_body");
-  if (!modal || !body) return;
-
-  // ย้าย element กลับที่เดิม
-  for (const [el, placeholder] of modalReturnMap.entries()) {
-    if (!placeholder || !placeholder.parentNode) continue;
-
-    placeholder.parentNode.insertBefore(el, placeholder);
-    placeholder.parentNode.removeChild(placeholder);
-
-    const t = modalTypeMap.get(el);
-
-    // ✅ ซ่อนเฉพาะ table/pager
-    if (t === "table" || t === "pager") {
-      el.classList.add("hidden");
-    } else if (t === "chart") {
-      el.classList.remove("hidden"); // ✅ chart ต้องโชว์กลับ
-    }
-  }
-
-  modalReturnMap.clear();
-  modalTypeMap.clear();
-
-  // ปิด modal
-  modal.classList.add("hidden");
-  modal.setAttribute("aria-hidden", "true");
-  modalOpen = false;
-
-  hideDashDetails();
-
-  requestAnimationFrame(() => resizeVisibleCharts());
-
-  if (alsoClearFocus) clearFocus();
-}
-
-// ปิด modal ด้วย Esc
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    if (modalOpen) closeTableModal(true);
-    else clearFocus();
-  }
-});
-
-function initTabs() {
-  const buttons = document.querySelectorAll(".tab-btn");
-  const panels = document.querySelectorAll(".tab-panel");
-
-  buttons.forEach(btn => {
-    btn.addEventListener("click", () => {
-      clearFocus();
-
-      buttons.forEach(b => b.classList.remove("active"));
-      panels.forEach(p => p.classList.remove("active"));
-
-      btn.classList.add("active");
-      const targetId = btn.getAttribute("data-tab");
-      document.getElementById(targetId)?.classList.add("active");
-
-      // ✅ สำคัญ: ให้ Chart.js คำนวณขนาดใหม่หลังแท็บโชว์
-      requestAnimationFrame(() => resizeVisibleCharts());
-    });
-
-  });
-}
-
-function initChartTableToggles() {
-  const bindings = [
-    {
-      boxId: "market_chart_box",
-      tableId: "dash_market",
-      title: "Labor Market",
-      chartGetter: () => chartMarket
+  createOrReplaceChart('revenueTrend', 'chart_revenue_trend', {
+    type: 'line',
+    data: {
+      labels: trendData.map(r => r.label),
+      datasets: [{
+        label: 'รายได้โดยประมาณ',
+        data: trendData.map(r => r.value),
+        borderColor: COLORS.blue700,
+        backgroundColor: 'rgba(59,130,246,0.18)',
+        pointBackgroundColor: COLORS.blue700,
+        pointRadius: 4,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.3
+      }]
     },
-    {
-      boxId: "hire_gender_chart_box",
-      tableId: "dash_hire_gender",
-      title: "Hire rate by Gender",
-      chartGetter: () => chartHireGender
-    },
-    {
-      boxId: "gender_ratio_chart_box",
-      tableId: "dash_gender_ratio",
-      title: "Gender ratio by Job Type",
-      chartGetter: () => chartGenderRatio
-    },
-    {
-      boxId: "geo_chart_box",
-      tableId: "dash_geo",
-      pagerId: "dash_geo_pager",
-      title: "Geographic Distribution",
-      chartGetter: () => chartGeoPosts
-    },
-    {
-      boxId: "gov_status_chart_box",
-      tableId: "dash_gov_status",
-      title: "Governance Status",
-      chartGetter: () => chartGovStatus
-    },
-  ];
+    options: baseOptions({
+      scales: { y: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } },
+      plugins: {
+        datalabels: {
+          color: COLORS.blue900,
+          align: 'top',
+          anchor: 'end',
+          formatter: (v) => moneyFmt(v)
+        },
+        tooltip: { callbacks: { label: (ctx) => moneyFmt(ctx.raw) } }
+      }
+    })
+  });
+  requestAnimationFrame(resizeAllCharts);
+}
 
-  bindings.forEach(({ boxId, tableId, pagerId, title, chartGetter }) => {
-    const box = document.getElementById(boxId);
-    const table = document.getElementById(tableId);
-    const pager = pagerId ? document.getElementById(pagerId) : null;
-
-    if (!box || !table) return;
-
-    box.addEventListener("click", () => {
-      if (box.classList.contains("hidden")) return;
-      if (modalOpen) return;
-
-      focusCard(box.closest(".card"));
-
-      // ✅ เปิด modal พร้อม "chart + table (+pager)"
-      openTableModal(title, box, table, pager, chartGetter);
-    });
+function buildCommonParams() {
+  return new URLSearchParams({
+    geography: document.getElementById('geography').value,
+    province: document.getElementById('province').value,
+    job_type: document.getElementById('job_type').value
   });
 }
 
-document.addEventListener("DOMContentLoaded", async () => {
-  await initGeographies();
-  wireEvents();
-  initTabs(); // ✅ เพิ่มบรรทัดนี้
-  initChartTableToggles();
-  loadGlobalSummary();
-});
+function buildMarketParams() {
+  const params = buildCommonParams();
+  const marketGender = document.getElementById('market_gender').value;
+  const marketAgeMin = document.getElementById('market_age_min').value;
+  const marketAgeMax = document.getElementById('market_age_max').value;
 
-document.addEventListener("mousedown", (e) => {
-  const focused = document.querySelector(".card.is-focused");
-  if (!focused) return;
+  if (marketGender) params.set('gender', marketGender);
+  if (marketAgeMin) params.set('age_min', marketAgeMin);
+  if (marketAgeMax) params.set('age_max', marketAgeMax);
 
-  // ถ้าคลิกอยู่ใน modal panel ไม่ต้อง clear
-  const modalPanel = document.querySelector("#table_modal .modal-panel");
-  if (modalPanel && modalPanel.contains(e.target)) return;
-
-  // คลิกนอกการ์ดที่โฟกัส -> clear
-  if (!focused.contains(e.target)) clearFocus();
-});
-
-function wireEvents() {
-  document.getElementById("geography").addEventListener("change", async (e) => {
-    const geographyId = e.target.value;
-    await loadProvincesByGeography(geographyId);
-
-    // รีเซ็ตอำเภอทุกครั้งเมื่อภาคเปลี่ยน
-    resetDistricts();
-  });
-
-  // เพิ่ม: พอเลือกจังหวัด → โหลดอำเภอ
-  document.getElementById("province").addEventListener("change", async (e) => {
-    const provinceId = e.target.value;
-    await loadDistrictsByProvince(provinceId);
-  });
+  return params;
 }
 
-function resetDistricts() {
-  const distSelect = document.getElementById("district");
-  distSelect.disabled = true;
-  distSelect.innerHTML = `<option value="">ทุกอำเภอ</option>`;
-}
-
-function clearAllOutputs() {
-  // เคลียร์ตารางหลัก
-  const result = document.getElementById("result");
-  if (result) result.innerHTML = "";
-
-  // ✅ เคลียร์ pager ตารางหลัก
-  const resultPager = document.getElementById("result_pager");
-  if (resultPager) resultPager.innerHTML = "";
-
-  const geoBox = document.getElementById("geo_chart_box");
-  if (geoBox) geoBox.classList.add("hidden");
-
-  const marketBox = document.getElementById("market_chart_box");
-  if (marketBox) marketBox.classList.add("hidden");
-
-  const govBox = document.getElementById("gov_status_chart_box");
-  if (govBox) govBox.classList.add("hidden");
-
-  // เคลียร์ตาราง dashboard
-  ["dash_market","dash_geo","dash_gov_status","dash_gov_lco","dash_demo","dash_wage_dist","dash_hire_gender","dash_gender_ratio"].forEach(id => {
-    const t = document.getElementById(id);
-    if (t) t.innerHTML = "";
-  });
-
-  // ✅ เคลียร์ pager ใน dashboard ด้วย
-  const geoPager = document.getElementById("dash_geo_pager");
-  if (geoPager) geoPager.innerHTML = "";
-
-  const lcoPager = document.getElementById("dash_gov_lco_pager");
-  if (lcoPager) lcoPager.innerHTML = "";
-
-  const hireGenderBox = document.getElementById("hire_gender_chart_box");
-  if (hireGenderBox) hireGenderBox.classList.add("hidden");
-  
-  const grBox = document.getElementById("gender_ratio_chart_box");
-  if (grBox) grBox.classList.add("hidden");
-
-  /*const grTable = document.getElementById("dash_gender_ratio");
-  if (grTable) grTable.innerHTML = ""; */
-  // เคลียร์ overview
-  const ov = document.getElementById("dash_overview");
-  // if (ov) ov.innerHTML = `<div class="muted">กด Filter เพื่อแสดงข้อมูล</div>`;
-  if (ov) ov.innerHTML = `<div class="muted"></div>`;
-
-  // ✅ ซ่อนตาราง/pager ของโหมด A กลับไปเหมือนเดิม
-  ["dash_market","dash_hire_gender","dash_gender_ratio","dash_geo","dash_gov_status"].forEach(id => {
-    const t = document.getElementById(id);
-    if (t) t.classList.add("hidden");
-  });
-
-  // const geoPager = document.getElementById("dash_geo_pager");
-  if (geoPager) geoPager.classList.add("hidden");
-  
-  // ปิดกราฟ (destroy)
-  if (chartMarket) { chartMarket.destroy(); chartMarket = null; }
-  if (chartGovStatus) { chartGovStatus.destroy(); chartGovStatus = null; }
-  if (chartGeoPosts) { chartGeoPosts.destroy(); chartGeoPosts = null; }
-  if (chartHireGender) { chartHireGender.destroy(); chartHireGender = null; }
-  if (chartGenderRatio) { chartGenderRatio.destroy(); chartGenderRatio = null; }
-  
-}
-
-async function resetFilters() {
-  // reset ค่า inputs/select
-  document.getElementById("geography").value = "";
-  document.getElementById("job_type").value = "";
-  document.getElementById("min_wage").value = "";
-  document.getElementById("max_wage").value = "";
-  document.getElementById("gender").value = "";
-  document.getElementById("age_min").value = "";
-  document.getElementById("age_max").value = "";
-
-  // reset จังหวัด + อำเภอ (กลับไปเหมือนเริ่มต้น)
-  const prov = document.getElementById("province");
-  prov.innerHTML = `<option value="">ทุกจังหวัด</option>`;
-  prov.disabled = true;
-
-  resetDistricts();
-
-  // ล้างสถานะ sort
-  Object.keys(tableState).forEach(k => delete tableState[k]);
-
-  // ✅ ล้างผลลัพธ์บนหน้าจอ (ไม่ยิง API)
-  clearAllOutputs();
-  resetPagesToFirst();
-
+async function fetchJson(url) {
+  const res = await fetch(url);
+  let data = null;
+  try { data = await res.json(); } catch (_) {}
+  if (!res.ok) throw new Error(data?.error || `${res.status} ${res.statusText}`);
+  return data;
 }
 
 async function initGeographies() {
   const geoSelect = document.getElementById("geography");
-
   try {
-    const res = await fetch(`${API_BASE}/geographies`);
-    const geos = await res.json();
-
+    const geos = await fetchJson(`${API_BASE}/geographies`);
     geoSelect.innerHTML = `<option value="">ทุกภาค</option>`;
     geos.forEach(g => {
       geoSelect.innerHTML += `<option value="${g.id}">${g.name}</option>`;
     });
-
   } catch (err) {
     console.error(err);
     geoSelect.innerHTML = `<option value="">โหลดภาคไม่สำเร็จ</option>`;
@@ -477,21 +119,15 @@ async function loadProvincesByGeography(geographyId) {
   provSelect.disabled = true;
   provSelect.innerHTML = `<option value="">ทุกจังหวัด</option>`;
 
-  resetDistricts();
-
-  // ถ้าไม่เลือกภาค → ให้โหลดจังหวัดทั้งหมด (หรือจะปล่อยว่างก็ได้)
   const url = geographyId
     ? `${API_BASE}/provinces?geography_id=${encodeURIComponent(geographyId)}`
     : `${API_BASE}/provinces`;
 
   try {
-    const res = await fetch(url);
-    const provinces = await res.json();
-
+    const provinces = await fetchJson(url);
     provinces.forEach(p => {
       provSelect.innerHTML += `<option value="${p.id}">${p.name_th}</option>`;
     });
-
     provSelect.disabled = false;
   } catch (err) {
     console.error(err);
@@ -499,910 +135,505 @@ async function loadProvincesByGeography(geographyId) {
   }
 }
 
-async function loadDistrictsByProvince(provinceId) {
-  const distSelect = document.getElementById("district");
-  distSelect.disabled = true;
-  distSelect.innerHTML = `<option value="">ทุกอำเภอ</option>`;
+function wireEvents() {
+  document.getElementById("geography").addEventListener("change", async (e) => {
+    await loadProvincesByGeography(e.target.value);
+  });
 
-  // ถ้ายังไม่เลือกจังหวัด → ไม่โหลด
-  if (!provinceId) return;
+  document.getElementById('marketFilterBtn').addEventListener('click', loadMarketChartOnly);
 
-  const url = `${API_BASE}/districts?province_id=${encodeURIComponent(provinceId)}`;
+  document.getElementById('month_filter')?.addEventListener('change', renderTrendFromCache);
+}
 
-  try {
-    const res = await fetch(url);
-    const districts = await res.json();
+function initTabs() {
+  const buttons = document.querySelectorAll(".tab-btn");
+  const panels = document.querySelectorAll(".tab-panel");
 
-    districts.forEach(d => {
-      distSelect.innerHTML += `<option value="${d.id}">${d.name_th}</option>`;
+  buttons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      buttons.forEach(b => b.classList.remove("active"));
+      panels.forEach(p => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(btn.dataset.tab)?.classList.add("active");
+      requestAnimationFrame(resizeAllCharts);
     });
-
-    distSelect.disabled = false;
-  } catch (err) {
-    console.error(err);
-    distSelect.innerHTML = `<option value="">โหลดอำเภอไม่สำเร็จ</option>`;
-  }
-}
-
-
-async function loadData() {
-  const params = new URLSearchParams({
-    geography: document.getElementById('geography').value,
-    province: document.getElementById('province').value,
-    district: document.getElementById('district').value,
-    job_type: document.getElementById('job_type').value,
-    gender: document.getElementById('gender').value,
-    age_min: document.getElementById('age_min').value,
-    age_max: document.getElementById('age_max').value,
-    min_wage: document.getElementById('min_wage').value,
-    max_wage: document.getElementById('max_wage').value,
-    page: pagerState.main.page,
-    page_size: pagerState.main.pageSize
-  });
-
-  // ✅ ส่ง sort ไปกับ API
-  applySortParams(params, "result");
-
-  const data = await fetchJson(`${API_BASE}/jobs?${params}`);
-
-  const rows = Array.isArray(data?.rows) ? data.rows : [];
-  pagerState.main.total = Number(data?.total || 0);
-
-  renderTable(
-    "result",
-    [
-      { key: "geography", label: "ภาค", sortable: true },
-      { key: "province",  label: "จังหวัด", sortable: true },
-      { key: "district",  label: "อำเภอ", sortable: true },
-      { key: "job_type",  label: "ประเภท", sortable: true },
-      { key: "total_jobs", label: "จำนวนงาน", sortable: true },
-      { key: "avg_wage",   label: "ค่าแรงเฉลี่ย", sortable: true },
-    ],
-    rows
-  );
-
-  renderPager(
-    "result_pager",
-    pagerState.main.page,
-    pagerState.main.pageSize,
-    pagerState.main.total,
-    (newPage) => { pagerState.main.page = newPage; loadData(); }
-  );
-}
-
-function escapeHtml(v) {
-  if (v === null || v === undefined) return "";
-  return String(v)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
-
-function renderTable(tableId, columns, rows) {
-  const table = document.getElementById(tableId);
-  if (!table) return;
-
-  // init state
-  if (!tableState[tableId]) tableState[tableId] = { sortKey: null, sortDir: "desc", rows: [] };
-  const state = tableState[tableId];
-
-  state.rows = Array.isArray(rows) ? rows : [];
-
-  // sort ก่อน render (ถ้ามี sortKey)
-  const useServerSort = SERVER_SORT_TABLES.has(tableId);
-
-  const displayRows = (!useServerSort && state.sortKey)
-    ? sortRows(state.rows, state.sortKey, state.sortDir)
-    : state.rows;
-
-
-  // สร้าง thead/tbody ชัดเจน (กัน browser แทรก tbody แล้วพฤติกรรมแปลกๆ)
-  const theadHtml = `
-    <thead>
-      <tr>
-        ${columns.map(c => {
-          const isSortable = !!c.sortable;
-          const arrow = (state.sortKey === c.key)
-            ? (state.sortDir === "asc" ? " ▲" : " ▼")
-            : "";
-          return `
-            <th ${isSortable ? 'class="sortable"' : ""} data-key="${c.key}">
-              ${escapeHtml(c.label)}${arrow}
-            </th>
-          `;
-        }).join("")}
-      </tr>
-    </thead>
-  `;
-
-  const tbodyHtml = `
-    <tbody>
-      ${
-        (!displayRows || displayRows.length === 0)
-          ? `<tr><td class="muted" colspan="${columns.length}">ไม่มีข้อมูล</td></tr>`
-          : displayRows.map(r => `
-              <tr>
-                ${columns.map(c => `<td>${escapeHtml(r[c.key])}</td>`).join("")}
-              </tr>
-            `).join("")
-      }
-    </tbody>
-  `;
-
-  table.innerHTML = theadHtml + tbodyHtml;
-
-  // ✅ Event Delegation: ผูกคลิกครั้งเดียวที่ thead
-  const thead = table.querySelector("thead");
-  if (thead) {
-    thead.onclick = (e) => {
-      const th = e.target.closest("th.sortable");
-      if (!th) return;
-
-      const key = th.dataset.key;
-
-      if (state.sortKey === key) {
-        state.sortDir = (state.sortDir === "asc") ? "desc" : "asc";
-      } else {
-        state.sortKey = key;
-        state.sortDir = "desc"; // เริ่มต้น มาก -> น้อย
-      }
-
-      if (SERVER_SORT_TABLES.has(tableId)) {
-        onServerSort(tableId);     // ✅ ให้ server เป็นคน sort ทั้ง dataset
-      } else {
-        renderTable(tableId, columns, state.rows); // ตารางที่ไม่ paged ค่อย sort client ได้
-      }
-
-    };
-  }
-}
-
-//const tableState = {}; // เก็บสถานะ sort ของแต่ละ tableId
-
-function parseNumber(v) {
-  if (v === null || v === undefined || v === "") return null;
-  // รองรับ "1,234.56"
-  const n = Number(String(v).replaceAll(",", ""));
-  return Number.isFinite(n) ? n : null;
-}
-
-function sortRows(rows, key, dir) {
-  const sign = dir === "asc" ? 1 : -1;
-
-  return [...rows].sort((a, b) => {
-    const av = parseNumber(a[key]);
-    const bv = parseNumber(b[key]);
-
-    // ถ้าเป็นตัวเลขทั้งคู่ → sort แบบเลข
-    if (av !== null && bv !== null) return (av - bv) * sign;
-
-    // ถ้าอันใดอันหนึ่งเป็น null → ดันไปท้าย
-    if (av === null && bv !== null) return 1;
-    if (av !== null && bv === null) return -1;
-
-    // ถ้าไม่ใช่เลข → sort แบบตัวอักษร
-    return String(a[key] ?? "").localeCompare(String(b[key] ?? ""), "th") * sign;
   });
 }
 
-function renderPager(containerId, page, pageSize, total, onPageChange) {
-  const el = document.getElementById(containerId);
-  if (!el) return;
+function destroyChart(name) {
+  if (charts[name]) {
+    charts[name].destroy();
+    charts[name] = null;
+  }
+}
 
-  el.classList.add("pager");
+function destroyAllCharts() {
+  Object.keys(charts).forEach(destroyChart);
+}
 
-  const totalPages = Math.max(Math.ceil(total / pageSize), 1);
-  const start = total === 0 ? 0 : (page - 1) * pageSize + 1;
-  const end = Math.min(page * pageSize, total);
+function resizeAllCharts() {
+  Object.values(charts).forEach(ch => {
+    if (ch) {
+      ch.resize();
+      ch.update();
+    }
+  });
+}
 
-  const windowSize = 5;
-  let from = Math.max(1, page - Math.floor(windowSize / 2));
-  let to = Math.min(totalPages, from + windowSize - 1);
-  from = Math.max(1, to - windowSize + 1);
+function renderEmpty(canvasId, message = "ไม่มีข้อมูลสำหรับเงื่อนไขที่เลือก") {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const box = canvas.closest('.chart-box');
+  if (!box) return;
+  box.innerHTML = `<div class="empty-state">${message}</div><canvas id="${canvasId}"></canvas>`;
+  const newCanvas = box.querySelector(`#${canvasId}`);
+  newCanvas.style.display = 'none';
+}
 
-  const nums = [];
-  for (let i = from; i <= to; i++) nums.push(i);
+function resetCanvasBox(canvasId) {
+  const canvas = document.getElementById(canvasId);
+  const box = canvas?.closest('.chart-box');
+  if (!box) return;
+  const hiddenCanvas = box.querySelector('canvas[style*="display: none"]');
+  const empty = box.querySelector('.empty-state');
+  if (empty) empty.remove();
+  if (hiddenCanvas) hiddenCanvas.removeAttribute('style');
+}
 
-  el.innerHTML = `
-    <span class="info">แสดง ${start}-${end} จาก ${total} รายการ</span>
-    <button ${page <= 1 ? "disabled" : ""} data-page="${page - 1}">Prev</button>
-    ${from > 1 ? `<button data-page="1">1</button><span class="muted">...</span>` : ""}
-    ${nums.map(p => `<button class="${p === page ? "active" : ""}" data-page="${p}">${p}</button>`).join("")}
-    ${to < totalPages ? `<span class="muted">...</span><button data-page="${totalPages}">${totalPages}</button>` : ""}
-    <button ${page >= totalPages ? "disabled" : ""} data-page="${page + 1}">Next</button>
-  `;
+function createOrReplaceChart(key, canvasId, config) {
+  resetCanvasBox(canvasId);
+  destroyChart(key);
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return null;
+  charts[key] = new Chart(ctx, config);
+  return charts[key];
+}
 
-  el.onclick = (e) => {
-    const btn = e.target.closest("button[data-page]");
-    if (!btn || btn.disabled) return;
-    onPageChange(Number(btn.dataset.page));
+function numberFmt(n) {
+  return Number(n || 0).toLocaleString('en-US');
+}
+
+function moneyFmt(n) {
+  return `฿${Number(n || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+}
+
+function pctFmtFromNumber(n, digits = 1) {
+  return `${Number(n || 0).toFixed(digits)}%`;
+}
+
+function baseOptions(extra = {}) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        position: 'top',
+        labels: { boxWidth: 12, boxHeight: 12, padding: 12, color: '#334155' }
+      },
+      datalabels: {
+        color: COLORS.blue900,
+        anchor: 'end',
+        align: 'end',
+        offset: 2,
+        clip: false,
+        font: { weight: '700', size: 11 },
+        formatter: (value) => numberFmt(value)
+      }
+    },
+    scales: {
+      x: {
+        grid: { color: COLORS.grid },
+        ticks: { color: '#475569' }
+      },
+      y: {
+        grid: { color: COLORS.grid },
+        ticks: { color: '#475569' }
+      }
+    },
+    ...extra
   };
 }
 
-function renderOverviewCards(data) {
-  const el = document.getElementById("dash_overview");
-  if (!el) return;
-
-  if (!data || data.error) {
-    el.innerHTML = `<div class="muted">โหลดไม่สำเร็จ: ${escapeHtml(data?.error || "")}</div>`;
-    return;
-  }
-
-  // ทำเป็นตารางเล็กๆ (ง่ายสุด)
-  el.innerHTML = `
-    <table>
-      <tr><th>ตัวชี้วัด</th><th>ค่า</th></tr>
-      <tr><td>จำนวน Job Posts ทั้งหมด</td><td>${escapeHtml(data.total_jobposts)}</td></tr>
-      <tr><td>จำนวน Applications</td><td>${escapeHtml(data.total_applications)}</td></tr>
-      <tr><td>จำนวน Employments (ได้งาน)</td><td>${escapeHtml(data.total_employments)}</td></tr>
-      <tr><td>Conversion rate (สมัคร → ได้งาน)</td><td>${escapeHtml(data.conversion_rate)}</td></tr>
-      <tr><td>จำนวน Jobseekers ทั้งหมด</td><td>${escapeHtml(data.total_jobseekers)}</td></tr>
-      <tr><td>Jobseekers ใหม่ในช่วงเวลา</td><td>${escapeHtml(data.new_jobseekers_in_range ?? 0)}</td></tr>
-    </table>
-  `;
-}
-
-async function fetchJson(url) {
-  const r = await fetch(url);
-
-  let data = null;
-  try {
-    data = await r.json();
-  } catch (_) {
-    // เผื่อ server ตอบไม่ใช่ JSON
-  }
-
-  if (!r.ok) {
-    const msg = data?.error || `${r.status} ${r.statusText}`;
-    throw new Error(`${url} -> ${msg}`);
-  }
-  return data;
-}
-
-function buildDashboardParams() {
-  return new URLSearchParams({
-    geography: document.getElementById('geography').value,
-    province: document.getElementById('province').value,
-    district: document.getElementById('district').value,
-    job_type: document.getElementById('job_type').value,
-    gender: document.getElementById('gender').value,
-    age_min: document.getElementById('age_min').value,
-    age_max: document.getElementById('age_max').value,
-    min_wage: document.getElementById('min_wage').value,
-    max_wage: document.getElementById('max_wage').value
+function pieOptions(valueFormatter) {
+  return baseOptions({
+    scales: {},
+    plugins: {
+      legend: { position: 'bottom', labels: { boxWidth: 12, boxHeight: 12, padding: 12, color: '#334155' } },
+      datalabels: {
+        color: '#0f172a',
+        font: { weight: '700', size: 11 },
+        formatter: (value, ctx) => {
+          const data = ctx.chart.data.datasets[0].data || [];
+          const total = data.reduce((a, b) => a + Number(b || 0), 0);
+          const pct = total ? (Number(value || 0) / total) * 100 : 0;
+          return `${numberFmt(value)}\n(${pct.toFixed(1)}%)`;
+        }
+      },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => `${ctx.label}: ${valueFormatter ? valueFormatter(ctx.raw) : numberFmt(ctx.raw)}`
+        }
+      }
+    }
   });
 }
 
-function renderGenderRatioSection(genderRatio) {
-  const raw = Array.isArray(genderRatio) ? genderRatio : [];
+function updateRevenueKpis(metrics) {
+  document.getElementById('kpi_mrr').textContent = moneyFmt(metrics.mrr);
+  document.getElementById('kpi_arr').textContent = moneyFmt(metrics.arr);
+  document.getElementById('kpi_paid_ratio').textContent = pctFmtFromNumber(metrics.paidRatio * 100, 1);
+  document.getElementById('kpi_verified').textContent = moneyFmt(metrics.verifiedRevenue);
+}
 
-  // ✅ แสดงผลเป็น % สำหรับตาราง (แต่กราฟใช้ raw ได้เลย)
-  const rows = raw.map(r => ({
-    ...r,
-    male_share: (Number(r.male_share || 0) * 100).toFixed(1) + "%",
-    female_share: (Number(r.female_share || 0) * 100).toFixed(1) + "%",
-    male_to_female_ratio: (r.male_to_female_ratio === null || r.male_to_female_ratio === undefined)
-      ? ""   // female=0 -> จะเป็น NULL ใน SQL
-      : Number(r.male_to_female_ratio).toFixed(2)
-  }));
+function normalizePackageLabel(name) {
+  const raw = String(name || '').trim().toLowerCase();
+  if (!raw || raw === 'basic') return 'Basic';
+  if (raw === 'pro') return 'Pro';
+  if (raw === 'business') return 'Business';
+  return name;
+}
 
-  renderTable(
-    "dash_gender_ratio",
-    [
-      { key: "job_type", label: "ประเภทงาน", sortable: true },
-      { key: "male", label: "ชาย", sortable: true },
-      { key: "female", label: "หญิง", sortable: true },
-      { key: "total_known", label: "รวม(ไม่รวม Unknown)", sortable: true },
-      { key: "male_share", label: "%ชาย", sortable: true },
-      { key: "female_share", label: "%หญิง", sortable: true },
-      { key: "male_to_female_ratio", label: "อัตราส่วน ชาย/หญิง", sortable: true },
-    ],
-    rows
+function buildRevenueMetrics(revenue) {
+  const packageBreakdown = Array.isArray(revenue?.packageBreakdown) ? revenue.packageBreakdown : [];
+  const packageMap = new Map(
+    packageBreakdown.map(item => [normalizePackageLabel(item.package_name), Number(item.revenue || 0)])
   );
 
-  // ✅ กราฟใช้ raw (male_share/female_share ยังเป็น 0-1 อยู่)
-  renderGenderRatioChart(raw);
-}
+  let trend = Array.isArray(revenue?.trend) ? revenue.trend.map(item => ({
+    label: item.label,
+    value: Number(item.value || 0)
+  })) : [];
 
-async function loadDashboardAll() {
-  const params = buildDashboardParams();
-
-  const geoParams = new URLSearchParams(params);
-  applySortParams(geoParams, "dash_geo");
-
-  const lcoParams = new URLSearchParams(params);
-  applySortParams(lcoParams, "dash_gov_lco");
-
-  try {
-    const [
-      overview,
-      market,
-      geo,
-      govStatus,
-      govLco,
-      demo,
-      wageDist,
-      geoTop,
-      hireGender,
-      genderRatio
-    ] = await Promise.all([
-      fetchJson(`${API_BASE}/dashboard/overview?${params}`),
-      fetchJson(`${API_BASE}/dashboard/market?${params}`),
-      fetchJson(`${API_BASE}/dashboard/geo/area?${geoParams}&page=${pagerState.geo.page}&page_size=${pagerState.geo.pageSize}`),
-      fetchJson(`${API_BASE}/dashboard/gov/status?${params}`),
-      fetchJson(`${API_BASE}/dashboard/gov/lco?${lcoParams}&page=${pagerState.lco.page}&page_size=${pagerState.lco.pageSize}`),
-      fetchJson(`${API_BASE}/dashboard/behavior/demographics?${params}`),
-      fetchJson(`${API_BASE}/dashboard/wage-distribution?${params}`),
-      fetchJson(`${API_BASE}/dashboard/geo/top?${params}`),
-      fetchJson(`${API_BASE}/dashboard/hire-rate/gender?${params}`),
-      fetchJson(`${API_BASE}/dashboard/gender-ratio/job-type?${params}`),
-
-    ]);
-
-    renderGeoTopChart(geoTop);
-
-    // A overview
-    renderOverviewCards(overview);
-
-    // B market table
-    renderTable("dash_market",
-      [
-        { key: "job_type", label: "ประเภทงาน", sortable: true },
-        { key: "posts", label: "จำนวนโพสต์", sortable: true },
-        { key: "applications", label: "จำนวนสมัคร", sortable: true },
-        { key: "hired", label: "ได้งาน", sortable: true },
-        { key: "apps_per_post", label: "สมัคร/โพสต์", sortable: true },
-        { key: "hire_rate", label: "อัตราได้งาน", sortable: true },
-      ],
-      Array.isArray(market) ? market : []
-    );
-
-    // C geo area (paged)
-    const geoRows = Array.isArray(geo?.rows) ? geo.rows : [];
-    pagerState.geo.total = Number(geo?.total || 0);
-
-    renderTable("dash_geo",
-      [
-        { key: "geography", label: "ภาค" },
-        { key: "province", label: "จังหวัด" },
-        { key: "district", label: "อำเภอ" },
-        { key: "posts", label: "จำนวนโพสต์", sortable: true },
-        { key: "applications", label: "จำนวนสมัคร", sortable: true },
-        { key: "apps_per_post", label: "สมัคร/โพสต์", sortable: true },
-        { key: "avg_wage", label: "ค่าแรงเฉลี่ย", sortable: true },
-        { key: "avg_workers_needed", label: "รับคนเฉลี่ย", sortable: true },
-      ],
-      geoRows
-    );
-
-    renderPager(
-      "dash_geo_pager",
-      pagerState.geo.page,
-      pagerState.geo.pageSize,
-      pagerState.geo.total,
-      (newPage) => { pagerState.geo.page = newPage; loadDashboardPaged(); }  // ✅ เปลี่ยนตรงนี้
-    );
-
-    // D gov status
-    renderTable("dash_gov_status",
-      [
-        { key: "approval_status", label: "สถานะ", sortable: true },
-        { key: "posts_count", label: "จำนวนโพสต์", sortable: true },
-        { key: "share", label: "สัดส่วน", sortable: true },
-      ],
-      Array.isArray(govStatus) ? govStatus : []
-    );
-
-    // D gov lco (paged)
-    const lcoRows = Array.isArray(govLco?.rows) ? govLco.rows : [];
-    pagerState.lco.total = Number(govLco?.total || 0);
-
-    renderTable("dash_gov_lco",
-      [
-        { key: "lco_id", label: "LCO ID" },
-        { key: "total_assigned", label: "งานทั้งหมด", sortable: true },
-        { key: "pending_count", label: "Pending", sortable: true },
-        { key: "approved_count", label: "Approved", sortable: true },
-        { key: "rejected_count", label: "Rejected", sortable: true },
-        { key: "avg_review_hours", label: "ชั่วโมงตรวจเฉลี่ย", sortable: true },
-        { key: "total_appeals", label: "Appeal รวม", sortable: true },
-      ],
-      lcoRows
-    );
-
-    renderPager(
-      "dash_gov_lco_pager",
-      pagerState.lco.page,
-      pagerState.lco.pageSize,
-      pagerState.lco.total,
-      (newPage) => { pagerState.lco.page = newPage; loadDashboardPaged(); } // ✅ เปลี่ยนตรงนี้
-    );
-
-    // E demographics
-    renderTable("dash_demo",
-      [
-        { key: "job_type", label: "ประเภทงาน" },
-        { key: "gender", label: "เพศ" },
-        { key: "age_bucket", label: "ช่วงอายุ", sortable: true },
-        { key: "unique_applicants", label: "ผู้สมัครไม่ซ้ำ", sortable: true },
-        { key: "applications", label: "จำนวนสมัคร", sortable: true },
-      ],
-      Array.isArray(demo) ? demo : []
-    );
-
-    // wage dist
-    renderTable("dash_wage_dist",
-      [
-        { key: "job_type",   label: "ประเภทงาน", sortable: true },
-        { key: "p25_wage",   label: "P25 ค่าแรง", sortable: true },
-        { key: "median_wage",label: "Median ค่าแรง", sortable: true },
-        { key: "p75_wage",   label: "P75 ค่าแรง", sortable: true },
-        { key: "avg_wage",   label: "ค่าแรงเฉลี่ย", sortable: true },
-        { key: "posts",      label: "จำนวนโพสต์", sortable: true },
-      ],
-      Array.isArray(wageDist) ? wageDist : []
-    );
-
-    const hgRaw = Array.isArray(hireGender) ? hireGender : [];
-
-    // ✅ เอาเฉพาะ Male/Female (ไม่เอา Unknown/Other)
-    const hgRows = hgRaw.filter(r => {
-      const g = String(r.gender || "").toLowerCase();
-      return g === "male" || g === "female";
-    });
-
-    renderTable("dash_hire_gender",
-      [
-        { key: "gender", label: "เพศ", sortable: true },
-        { key: "applications", label: "จำนวนสมัคร", sortable: true },
-        { key: "hired", label: "ได้งาน", sortable: true },
-        { key: "hire_rate", label: "อัตราได้งาน", sortable: true },
-      ],
-      hgRows
-    );
-
-    renderHireGenderChart(hgRows);
-
-    renderGenderRatioSection(genderRatio);
-
-    // ✅ วาดกราฟ “เฉพาะตอน Filter / โหลดครบ”
-    renderMarketChart(Array.isArray(market) ? market : []);
-    renderGovStatusChart(Array.isArray(govStatus) ? govStatus : []);
-    renderGeoTopChart(geoTop)
-
-  } catch (err) {
-    console.error("❌ loadDashboardAll error:", err);
-    alert(err.message);
+  if (!trend.length) {
+    const currentLabel = new Date().toLocaleDateString('th-TH', { month: 'short', year: '2-digit' });
+    trend = [{ label: currentLabel, value: Number(revenue?.mrr || 0) }];
   }
+
+  return {
+    mrr: Number(revenue?.mrr || 0),
+    arr: Number(revenue?.arr || 0),
+    paidRatio: Number(revenue?.paidRatio || 0),
+    verifiedRevenue: Number(revenue?.verifiedRevenue || 0),
+    packageBreakdown,
+    proRevenue: Number(packageMap.get('Pro') || 0),
+    businessRevenue: Number(packageMap.get('Business') || 0),
+    basicRevenue: Number(packageMap.get('Basic') || 0),
+    trend,
+  };
 }
 
-async function loadDashboardPaged() {
-  const params = buildDashboardParams();
+function renderRevenueCharts(revenue) {
+  const metrics = buildRevenueMetrics(revenue);
+  updateRevenueKpis(metrics);
 
-  const geoParams = new URLSearchParams(params);
-  applySortParams(geoParams, "dash_geo");
-
-  const lcoParams = new URLSearchParams(params);
-  applySortParams(lcoParams, "dash_gov_lco");
-
-  try {
-    const [geo, govLco] = await Promise.all([
-      fetchJson(`${API_BASE}/dashboard/geo/area?${geoParams}&page=${pagerState.geo.page}&page_size=${pagerState.geo.pageSize}`),
-      fetchJson(`${API_BASE}/dashboard/gov/lco?${lcoParams}&page=${pagerState.lco.page}&page_size=${pagerState.lco.pageSize}`),
-    ]);
-
-    // geo table + pager
-    const geoRows = Array.isArray(geo?.rows) ? geo.rows : [];
-    pagerState.geo.total = Number(geo?.total || 0);
-
-    renderTable("dash_geo",
-      [
-        { key: "geography", label: "ภาค" },
-        { key: "province", label: "จังหวัด" },
-        { key: "district", label: "อำเภอ" },
-        { key: "posts", label: "จำนวนโพสต์", sortable: true },
-        { key: "applications", label: "จำนวนสมัคร", sortable: true },
-        { key: "apps_per_post", label: "สมัคร/โพสต์", sortable: true },
-        { key: "avg_wage", label: "ค่าแรงเฉลี่ย", sortable: true },
-        { key: "avg_workers_needed", label: "รับคนเฉลี่ย", sortable: true },
-      ],
-      geoRows
-    );
-
-    renderPager(
-      "dash_geo_pager",
-      pagerState.geo.page,
-      pagerState.geo.pageSize,
-      pagerState.geo.total,
-      (newPage) => { pagerState.geo.page = newPage; loadDashboardPaged(); }
-    );
-
-    // lco table + pager
-    const lcoRows = Array.isArray(govLco?.rows) ? govLco.rows : [];
-    pagerState.lco.total = Number(govLco?.total || 0);
-
-    renderTable("dash_gov_lco",
-      [
-        { key: "lco_id", label: "LCO ID" },
-        { key: "total_assigned", label: "งานทั้งหมด", sortable: true },
-        { key: "pending_count", label: "Pending", sortable: true },
-        { key: "approved_count", label: "Approved", sortable: true },
-        { key: "rejected_count", label: "Rejected", sortable: true },
-        { key: "avg_review_hours", label: "ชั่วโมงตรวจเฉลี่ย", sortable: true },
-        { key: "total_appeals", label: "Appeal รวม", sortable: true },
-      ],
-      lcoRows
-    );
-
-    renderPager(
-      "dash_gov_lco_pager",
-      pagerState.lco.page,
-      pagerState.lco.pageSize,
-      pagerState.lco.total,
-      (newPage) => { pagerState.lco.page = newPage; loadDashboardPaged(); }
-    );
-
-    // ✅ สำคัญ: ไม่เรียก renderMarketChart / renderGovStatusChart / renderGeoPostsChart ตรงนี้
-
-  } catch (err) {
-    console.error("❌ loadDashboardPaged error:", err);
-    alert(err.message);
-  }
-}
-
-function renderMarketChart(rows) {
-  const ctx = document.getElementById("chart_market");
-  const box = document.getElementById("market_chart_box");
-  if (!ctx || !box) return;
-
-  if (!rows || rows.length === 0) {
-    if (chartMarket) { chartMarket.destroy(); chartMarket = null; }
-    box.classList.add("hidden");
+  const packageLabels = ['Pro', 'Business', 'Verified Add-on'];
+  const packageValues = [metrics.proRevenue, metrics.businessRevenue, metrics.verifiedRevenue];
+  if (packageValues.every(v => v === 0)) {
+    destroyChart('revenuePackage');
+    destroyChart('revenueMix');
+    destroyChart('revenueTrend');
+    renderEmpty('chart_revenue_package');
+    renderEmpty('chart_revenue_mix');
+    renderEmpty('chart_revenue_trend');
     return;
   }
 
-  box.classList.remove("hidden");
-
-  const labels = rows.map(r => r.job_type);
-  const posts = rows.map(r => Number(r.posts || 0));
-  const applications = rows.map(r => Number(r.applications || 0));
-  const hired = rows.map(r => Number(r.hired || 0));
-
-  if (chartMarket) chartMarket.destroy();
-
-  chartMarket = new Chart(ctx, {
-    type: "bar",
+  createOrReplaceChart('revenuePackage', 'chart_revenue_package', {
+    type: 'bar',
     data: {
-      labels,
+      labels: packageLabels,
+      datasets: [{
+        label: 'รายได้ต่อเดือน',
+        data: packageValues,
+        backgroundColor: [COLORS.blue700, COLORS.blue500, COLORS.blue300],
+        borderRadius: 10,
+        maxBarThickness: 56
+      }]
+    },
+    options: baseOptions({
+      scales: { y: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          color: COLORS.blue900,
+          anchor: 'end',
+          align: 'end',
+          formatter: (v) => moneyFmt(v)
+        },
+        tooltip: { callbacks: { label: (ctx) => moneyFmt(ctx.raw) } }
+      }
+    })
+  });
+
+  createOrReplaceChart('revenueMix', 'chart_revenue_mix', {
+    type: 'doughnut',
+    data: {
+      labels: packageLabels,
+      datasets: [{
+        data: packageValues,
+        backgroundColor: [COLORS.blue700, COLORS.blue500, COLORS.blue300],
+        borderColor: '#ffffff',
+        borderWidth: 2
+      }]
+    },
+    options: pieOptions(moneyFmt)
+  });
+
+  trendCache = metrics.trend;
+  const monthVal = document.getElementById('month_filter')?.value || 'all';
+  const trendData = monthVal === 'all'
+    ? trendCache
+    : trendCache.slice(-parseInt(monthVal));
+
+  createOrReplaceChart('revenueTrend', 'chart_revenue_trend', {
+    type: 'line',
+    data: {
+      labels: trendData.map(r => r.label),
+      datasets: [{
+        label: 'รายได้ต่อเดือน',
+        data: trendData.map(r => r.value),
+        borderColor: COLORS.blue700,
+        backgroundColor: 'rgba(59,130,246,0.18)',
+        pointBackgroundColor: COLORS.blue700,
+        pointRadius: 4,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: baseOptions({
+      scales: { y: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } },
+      plugins: {
+        datalabels: {
+          color: COLORS.blue900,
+          align: 'top',
+          anchor: 'end',
+          formatter: (v) => moneyFmt(v)
+        },
+        tooltip: { callbacks: { label: (ctx) => moneyFmt(ctx.raw) } }
+      }
+    })
+  });
+}
+
+function renderMarketChart(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    destroyChart('market');
+    renderEmpty('chart_market');
+    return;
+  }
+
+  createOrReplaceChart('market', 'chart_market', {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.job_type),
       datasets: [
-        { label: "Posts", data: posts },
-        { label: "Applications", data: applications },
-        { label: "Hired", data: hired },
+        { label: 'จำนวนโพสต์', data: rows.map(r => Number(r.posts || 0)), backgroundColor: COLORS.blue700, borderRadius: 8, maxBarThickness: 34 },
+        { label: 'จำนวนการสมัคร', data: rows.map(r => Number(r.applications || 0)), backgroundColor: COLORS.blue500, borderRadius: 8, maxBarThickness: 34 },
+        { label: 'จำนวนที่ได้งาน', data: rows.map(r => Number(r.hired || 0)), backgroundColor: COLORS.blue300, borderRadius: 8, maxBarThickness: 34 },
       ]
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false, // ✅ สำคัญ ทำให้เต็ม chart-box
-      plugins: {
-        legend: {
-          position: "top",
-          labels: { boxWidth: 10, boxHeight: 10, padding: 10 }
-        }
-      },
-      scales: { y: { beginAtZero: true } }
-    }
+    options: baseOptions({ scales: { y: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } } })
+  });
+}
 
+function renderWageChart(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    destroyChart('wage');
+    renderEmpty('chart_wage');
+    return;
+  }
+
+  createOrReplaceChart('wage', 'chart_wage', {
+    type: 'line',
+    data: {
+      labels: rows.map(r => r.job_type),
+      datasets: [
+        { label: 'เปอร์เซ็นไทล์ 25', data: rows.map(r => Number(r.p25_wage || 0)), borderColor: COLORS.blue300, backgroundColor: COLORS.blue300, tension: 0.25, pointRadius: 3 },
+        { label: 'มัธยฐาน', data: rows.map(r => Number(r.median_wage || 0)), borderColor: COLORS.blue700, backgroundColor: COLORS.blue700, tension: 0.25, pointRadius: 4 },
+        { label: 'เปอร์เซ็นไทล์ 75', data: rows.map(r => Number(r.p75_wage || 0)), borderColor: COLORS.blue500, backgroundColor: COLORS.blue500, tension: 0.25, pointRadius: 3 },
+      ]
+    },
+    options: baseOptions({
+      scales: { y: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } },
+      plugins: {
+        datalabels: {
+          display: (ctx) => ctx.dataset.label === 'มัธยฐาน',
+          color: COLORS.blue900,
+          align: 'top',
+          anchor: 'end',
+          formatter: (v) => numberFmt(v)
+        }
+      }
+    })
+  });
+}
+
+function renderGeoChart(geoTop) {
+  const rows = Array.isArray(geoTop?.rows) ? geoTop.rows : [];
+  if (!rows.length || geoTop?.mode === 'none') {
+    destroyChart('geo');
+    renderEmpty('chart_geo_posts', 'ไม่มีกราฟเพิ่มเติมในระดับอำเภอที่เลือก');
+    return;
+  }
+
+  createOrReplaceChart('geo', 'chart_geo_posts', {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.label),
+      datasets: [{
+        label: geoTop.mode === 'district' ? 'จำนวนโพสต์ (อำเภอสูงสุด)' : 'จำนวนโพสต์ (จังหวัดสูงสุด)',
+        data: rows.map(r => Number(r.value || 0)),
+        backgroundColor: COLORS.blue500,
+        borderRadius: 8,
+        maxBarThickness: 24
+      }]
+    },
+    options: baseOptions({
+      indexAxis: 'y',
+      scales: { x: { beginAtZero: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } } },
+      plugins: {
+        legend: { display: false },
+        datalabels: {
+          color: COLORS.blue900,
+          anchor: 'end',
+          align: 'right',
+          formatter: (v) => numberFmt(v)
+        }
+      }
+    })
+  });
+}
+
+function renderGenderRatioChart(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    destroyChart('genderRatio');
+    renderEmpty('chart_gender_ratio');
+    return;
+  }
+
+  createOrReplaceChart('genderRatio', 'chart_gender_ratio', {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.job_type),
+      datasets: [
+        { label: 'ชาย %', data: rows.map(r => Number(r.male_share || 0) * 100), backgroundColor: COLORS.blue700, borderRadius: 6 },
+        { label: 'หญิง %', data: rows.map(r => Number(r.female_share || 0) * 100), backgroundColor: COLORS.blue300, borderRadius: 6 }
+      ]
+    },
+    options: baseOptions({
+      scales: {
+        x: { stacked: true, grid: { color: COLORS.grid }, ticks: { color: '#475569' } },
+        y: { stacked: true, beginAtZero: true, max: 100, grid: { color: COLORS.grid }, ticks: { color: '#475569', callback: (v) => `${v}%` } }
+      },
+      plugins: {
+        datalabels: {
+          color: COLORS.blue900,
+          formatter: (v) => `${Number(v || 0).toFixed(0)}%`
+        }
+      }
+    })
   });
 }
 
 function renderGovStatusChart(rows) {
-  const ctx = document.getElementById("chart_gov_status");
-  const box = document.getElementById("gov_status_chart_box");
-  if (!ctx || !box) return;
-
-  if (!rows || rows.length === 0) {
-    if (chartGovStatus) { chartGovStatus.destroy(); chartGovStatus = null; }
-    box.classList.add("hidden");
+  if (!Array.isArray(rows) || rows.length === 0) {
+    destroyChart('govStatus');
+    renderEmpty('chart_gov_status');
     return;
   }
 
-  box.classList.remove("hidden");
-
-  const labels = rows.map(r => r.approval_status);
-  const counts = rows.map(r => Number(r.posts_count || 0));
-
-  if (chartGovStatus) chartGovStatus.destroy();
-
-  chartGovStatus = new Chart(ctx, {
-    type: "pie",
+  createOrReplaceChart('govStatus', 'chart_gov_status', {
+    type: 'doughnut',
     data: {
-      labels,
-      datasets: [{ label: "Posts", data: counts }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,  // ✅ ให้กราฟยืดตามกล่อง
-      plugins: {
-        legend: {
-          position: "bottom",      // ✅ ลดการกินพื้นที่ด้านบน
-          labels: {
-            boxWidth: 12,
-            boxHeight: 12,
-            padding: 12,
-            font: { size: 12 }
-          }
-        }
-      }
-    }
-  });
-
-    // ✅ ถ้าตอนนี้แท็บยังไม่ active ให้รอจนโชว์แล้วค่อย resize
-    requestAnimationFrame(() => {
-      if (chartGovStatus) {
-        chartGovStatus.resize();
-        chartGovStatus.update();
-      }
-    });
-
-}
-
-function renderGeoPostsChart(geoRows) {
-  const box = document.getElementById("geo_chart_box");
-  const ctx = document.getElementById("chart_geo_posts");
-
-  // กันพัง
-  if (!ctx || !box) return;
-
-  // ถ้าไม่มีข้อมูล -> ซ่อน + ลบกราฟเดิม
-  if (!geoRows || geoRows.length === 0) {
-    if (chartGeoPosts) { chartGeoPosts.destroy(); chartGeoPosts = null; }
-    if (box) box.classList.add("hidden");
-    return;
-  }
-
-  // ดึงรายชื่อจังหวัด/อำเภอที่มีในข้อมูล
-  const provinces = [...new Set(geoRows.map(r => r.province).filter(Boolean))];
-  const districts = [...new Set(geoRows.map(r => r.district).filter(Boolean))];
-
-  // ✅ เลือกครบ ภาค+จังหวัด+อำเภอ (เหลืออำเภอเดียว) -> ซ่อนกราฟ
-  if (districts.length === 1) {
-    if (chartGeoPosts) { chartGeoPosts.destroy(); chartGeoPosts = null; }
-    if (box) box.classList.add("hidden");
-  return;
-  }
-
-  // อย่างอื่นให้โชว์กราฟ
-  if (box) box.classList.remove("hidden");
-
-  // 🟡 จังหวัดเดียว + หลายอำเภอ → Top 10 อำเภอ
-  if (provinces.length === 1 && districts.length > 1) {
-    const byDistrict = new Map();
-    geoRows.forEach(r => {
-      const key = r.district || "ไม่ระบุอำเภอ";
-      byDistrict.set(key, (byDistrict.get(key) || 0) + Number(r.posts || 0));
-    });
-
-    const sorted = [...byDistrict.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10);
-
-    if (chartGeoPosts) { chartGeoPosts.destroy(); chartGeoPosts = null; }
-
-    chartGeoPosts = new Chart(ctx, {
-      type: "bar",
-      data: {
-        labels: sorted.map(x => x[0]),
-        datasets: [{ label: "Posts (Top 10 Districts)", data: sorted.map(x => x[1]) }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false, // ✅ สำคัญ ทำให้เต็ม chart-box
-        plugins: {
-          legend: {
-            position: "top",
-            labels: { boxWidth: 10, boxHeight: 10, padding: 10 }
-          }
-        },
-        scales: { y: { beginAtZero: true } }
-      }
-
-    });
-
-    return;
-  }
-
-  // 🔵 หลายจังหวัด → Top 10 จังหวัด
-  const byProvince = new Map();
-  geoRows.forEach(r => {
-    const key = r.province || "ไม่ระบุจังหวัด";
-    byProvince.set(key, (byProvince.get(key) || 0) + Number(r.posts || 0));
-  });
-
-  const sorted = [...byProvince.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 10);
-
-  if (chartGeoPosts) { chartGeoPosts.destroy(); chartGeoPosts = null; }
-
-  chartGeoPosts = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: sorted.map(x => x[0]),
-      datasets: [{ label: "Posts (Top 10 Provinces)", data: sorted.map(x => x[1]) }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: true } },
-      scales: { y: { beginAtZero: true } }
-    }
-  });
-}
-
-function renderGeoTopChart(geoTop) {
-  const box = document.getElementById("geo_chart_box");
-  const ctx = document.getElementById("chart_geo_posts");
-  if (!ctx || !box) return;
-
-  const mode = geoTop?.mode;
-  const rows = Array.isArray(geoTop?.rows) ? geoTop.rows : [];
-
-  // mode none หรือไม่มีข้อมูล -> ซ่อน
-  if (mode === "none" || rows.length === 0) {
-    if (chartGeoPosts) { chartGeoPosts.destroy(); chartGeoPosts = null; }
-    box.classList.add("hidden");
-    return;
-  }
-
-  box.classList.remove("hidden");
-
-  const labels = rows.map(r => r.label);
-  const values = rows.map(r => Number(r.value || 0));
-
-  if (chartGeoPosts) { chartGeoPosts.destroy(); chartGeoPosts = null; }
-
-  chartGeoPosts = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
+      labels: rows.map(r => ({Pending:'รออนุมัติ', Approved:'อนุมัติแล้ว', Rejected:'ไม่อนุมัติ'}[r.approval_status] || r.approval_status)),
       datasets: [{
-        label: mode === "district" ? "Posts (Top 10 Districts)" : "Posts (Top 10 Provinces)",
-        data: values
+        data: rows.map(r => Number(r.posts_count || 0)),
+        backgroundColor: [COLORS.blue700, COLORS.blue500, COLORS.blue300, COLORS.blue900],
+        borderColor: '#ffffff',
+        borderWidth: 2
       }]
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false, // ✅ สำคัญ ทำให้เต็ม chart-box
-      plugins: {
-        legend: {
-          position: "top",
-          labels: { boxWidth: 10, boxHeight: 10, padding: 10 }
-        }
-      },
-      scales: { y: { beginAtZero: true } }
-    }
+    options: pieOptions(numberFmt)
   });
 }
 
-function renderHireGenderChart(rows) {
-  const ctx = document.getElementById("chart_hire_gender");
-  const box = document.getElementById("hire_gender_chart_box");
-  if (!ctx || !box) return;
-
-  if (!rows || rows.length === 0) {
-    if (chartHireGender) { chartHireGender.destroy(); chartHireGender = null; }
-    box.classList.add("hidden");
-    return;
-  }
-
-  box.classList.remove("hidden");
-
-  // เอาเฉพาะ Male/Female/Unknown/Other ตามที่ API ส่ง
-  const labels = rows.map(r => r.gender);
-  const rates = rows.map(r => Number(r.hire_rate || 0));
-
-  if (chartHireGender) chartHireGender.destroy();
-
-  chartHireGender = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [{ label: "Hire rate", data: rates }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false, // ✅ สำคัญ ทำให้เต็ม chart-box
-      plugins: {
-        legend: {
-          position: "top",
-          labels: { boxWidth: 10, boxHeight: 10, padding: 10 }
-        }
-      },
-      scales: { y: { beginAtZero: true } }
-    }
-  });
-}
-
-
-function renderGenderRatioChart(rows) {
-  const ctx = document.getElementById("chart_gender_ratio");
-  const box = document.getElementById("gender_ratio_chart_box");
-  if (!ctx || !box) return;
-
-  if (!rows || rows.length === 0) {
-    if (chartGenderRatio) { chartGenderRatio.destroy(); chartGenderRatio = null; }
-    box.classList.add("hidden");
-    return;
-  }
-
-  box.classList.remove("hidden");
-
-  const labels = rows.map(r => r.job_type);
-
-  // ใช้เปอร์เซ็นต์ (ไม่รวม Unknown อยู่แล้ว)
-  const malePct = rows.map(r => Number(r.male_share || 0) * 100);
-  const femalePct = rows.map(r => Number(r.female_share || 0) * 100);
-
-  if (chartGenderRatio) chartGenderRatio.destroy();
-
-  chartGenderRatio = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        { label: "Male %", data: malePct },
-        { label: "Female %", data: femalePct },
-      ],
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { position: "top" } },
-      scales: {
-        x: { stacked: true },
-        y: { stacked: true, beginAtZero: true, max: 100 }
-      }
-    }
-  });
-}
-
-function renderGlobalSummary(data) {
-  const el = document.getElementById("global_summary");
-  if (!el) return;
-
-  if (!data || data.error) {
-    el.innerHTML = `<tr><td class="muted">โหลดไม่สำเร็จ: ${escapeHtml(data?.error || "")}</td></tr>`;
-    return;
-  }
-
-  el.innerHTML = `
-    <tr><th>ตัวชี้วัด</th><th>ค่า</th></tr>
-    <tr><td>ผู้ใช้ทั้งหมด (Jobseekers)</td><td>${escapeHtml(data.total_users)}</td></tr>
-    <tr><td>Jobposts ทั้งหมด</td><td>${escapeHtml(data.total_jobposts)}</td></tr>
-    <tr><td>Applications ทั้งหมด</td><td>${escapeHtml(data.total_applications)}</td></tr>
-    <tr><td>ผู้ใช้เพศชายทั้งหมด</td><td>${escapeHtml(data.male_total)}</td></tr>
-    <tr><td>ผู้ใช้เพศหญิงทั้งหมด</td><td>${escapeHtml(data.female_total)}</td></tr>
-    <tr><td>รวมชายและหญิง</td><td>${escapeHtml(data.male_female_total)}</td></tr>
-  `;
-}
-
-async function loadGlobalSummary() {
+async function loadMarketChartOnly() {
   try {
-    const data = await fetchJson(`${API_BASE}/stats/global-summary`);
-    renderGlobalSummary(data);
+    const market = await fetchJson(`${API_BASE}/dashboard/market?${buildMarketParams()}`);
+    renderMarketChart(market);
+    requestAnimationFrame(resizeAllCharts);
   } catch (err) {
-    console.error("❌ loadGlobalSummary error:", err);
-    const el = document.getElementById("global_summary");
-    if (el) el.innerHTML = `<tr><td class="muted">${escapeHtml(err.message)}</td></tr>`;
+    console.error('❌ loadMarketChartOnly error:', err);
+    alert(`โหลดกราฟตลาดแรงงานไม่สำเร็จ: ${err.message}`);
   }
+}
+
+async function loadAllCharts() {
+  const commonParams = buildCommonParams();
+  const marketParams = buildMarketParams();
+
+  try {
+    const [revenue, overview, market, wageDist, geoTop, genderRatio, govStatus] = await Promise.all([
+      fetchJson(`${API_BASE}/dashboard/revenue/summary?${commonParams}`),
+      fetchJson(`${API_BASE}/dashboard/overview?${commonParams}`),
+      fetchJson(`${API_BASE}/dashboard/market?${marketParams}`),
+      fetchJson(`${API_BASE}/dashboard/wage-distribution?${commonParams}`),
+      fetchJson(`${API_BASE}/dashboard/geo/top?${commonParams}`),
+      fetchJson(`${API_BASE}/dashboard/gender-ratio/job-type?${commonParams}`),
+      fetchJson(`${API_BASE}/dashboard/gov/status?${commonParams}`),
+    ]);
+
+    renderRevenueCharts(revenue);
+    renderMarketChart(market);
+    renderWageChart(wageDist);
+    renderGeoChart(geoTop);
+    renderGenderRatioChart(genderRatio);
+    renderGovStatusChart(govStatus);
+
+    requestAnimationFrame(resizeAllCharts);
+  } catch (err) {
+    console.error('❌ loadAllCharts error:', err);
+    alert(`โหลดข้อมูลไม่สำเร็จ: ${err.message}`);
+  }
+}
+
+async function resetFilters() {
+  document.getElementById('geography').value = '';
+  document.getElementById('job_type').value = '';
+  document.getElementById('market_gender').value = '';
+  document.getElementById('market_age_min').value = '';
+  document.getElementById('market_age_max').value = '';
+
+  const prov = document.getElementById('province');
+  prov.innerHTML = `<option value="">ทุกจังหวัด</option>`;
+  prov.disabled = true;
+
+  destroyAllCharts();
+  await loadAllCharts();
 }
 
 function onFilterClick() {
-  resetPagesToFirst();
-  console.log("age_min", document.getElementById("age_min").value,
-              "age_max", document.getElementById("age_max").value);
-  loadData();
-  loadDashboardAll();
-  loadGlobalSummary();
+  loadAllCharts();
 }
 
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const filterBtn = document.getElementById('filterBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    if (filterBtn) filterBtn.addEventListener('click', onFilterClick);
+    if (resetBtn) resetBtn.addEventListener('click', resetFilters);
+
+    await initGeographies();
+    wireEvents();
+    initTabs();
+    await loadAllCharts();
+  } catch (err) {
+    console.error('DOMContentLoaded init error:', err);
+  }
+});
+
+window.addEventListener('resize', () => {
+  requestAnimationFrame(resizeAllCharts);
+});
