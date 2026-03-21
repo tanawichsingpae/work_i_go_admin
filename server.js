@@ -8,9 +8,7 @@ app.use(cors());
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production'
-    ? { rejectUnauthorized: false }
-    : false,
+  ssl: { rejectUnauthorized: false }
 });
 
 const schemaCache = {
@@ -1359,6 +1357,8 @@ app.get('/health/db', async (req, res) => {
 
 app.use(express.static("public"));
 
-app.listen(3000, () => {
-  console.log('✅ API connected to Supabase/Postgres at http://localhost:3000');
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
 });
